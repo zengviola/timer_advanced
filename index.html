@@ -251,6 +251,28 @@
     }
     .edit-btn:hover { color: var(--text); background: var(--surf2); }
 
+    /* ── Sync Chip ── */
+    .sync-row { display: flex; align-items: center; justify-content: center; gap: 8px; }
+    .sync-chip {
+      font-size: 0.7rem; font-weight: 700; padding: 3px 10px;
+      border-radius: 999px; cursor: pointer; border: none;
+      font-family: inherit; transition: opacity .15s;
+      letter-spacing: 0.03em;
+    }
+    .sync-chip:hover { opacity: .8; }
+    .sc-idle    { background: var(--surf2); color: var(--muted); }
+    .sc-syncing { background: rgba(14,165,233,.18); color: var(--daily); }
+    .sc-ok      { background: rgba(16,185,129,.18); color: var(--small); }
+    .sc-error   { background: rgba(239,68,68,.18);  color: var(--danger); }
+
+    /* ── Cloud Config ── */
+    .cloud-cfg {
+      background: var(--surf); border-radius: var(--r);
+      padding: 20px; display: flex; flex-direction: column; gap: 12px;
+      border: 1px solid rgba(14,165,233,.25);
+    }
+    .cloud-note { font-size: 0.75rem; color: var(--muted); line-height: 1.55; }
+
     /* ── Stats Bar ── */
     .stats-bar {
       display: flex; gap: 10px;
@@ -273,7 +295,29 @@
 <body>
 <div class="app">
 
-  <div class="app-title">⏱ 任务计时器</div>
+  <div class="sync-row">
+    <div class="app-title">⏱ 任务计时器</div>
+    <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
+  </div>
+
+  <!-- Cloud Config -->
+  <div class="cloud-cfg" id="cloudCfg" style="display:none">
+    <div class="sec-label" style="color:var(--daily)">☁ 云同步 · GitHub Gist</div>
+    <div class="fg">
+      <label class="fl">GitHub Personal Access Token</label>
+      <input type="password" id="cloudTokenInput" placeholder="ghp_ 或 gho_ 开头…" autocomplete="off"
+        onkeydown="if(event.key==='Enter')saveCloudToken()">
+    </div>
+    <div class="cloud-note">
+      Token 只保存在<b>本设备</b> localStorage，不会上传。<br>
+      需要勾选 <b>gist</b> 权限。首次保存后自动创建私密 Gist。<br>
+      <span id="cloudGistLink"></span>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn-add" onclick="saveCloudToken()" style="flex:1">保存 Token</button>
+      <button class="btn btn-muted" onclick="clearCloudToken()">清除</button>
+    </div>
+  </div>
 
   <!-- Stats Bar -->
   <div class="stats-bar">
@@ -1188,6 +1232,7 @@ function save() {
     localStorage.setItem('tt_workMode',   workMode ? '1' : '0');
     localStorage.setItem('tt_smallCount', smallCount);
   } catch(_) {}
+  debouncePush();
 }
 function load() {
   try {
@@ -1398,12 +1443,161 @@ function closeModal() {
   modalTag = '';
 }
 
+// ── Cloud Sync (GitHub Gist) ──
+let cloudToken  = '';
+let cloudGistId = '';
+let syncTimer   = null;
+
+const syncChip = document.getElementById('syncChip');
+const cloudCfg = document.getElementById('cloudCfg');
+
+function setChip(status, label) {
+  syncChip.className = `sync-chip sc-${status}`;
+  syncChip.textContent = label;
+}
+
+function toggleCloudCfg() {
+  cloudCfg.style.display = cloudCfg.style.display === 'none' ? 'flex' : 'none';
+  if (cloudCfg.style.display === 'flex') {
+    document.getElementById('cloudTokenInput').value = cloudToken ? '••••••••' : '';
+    updateGistLink();
+  }
+}
+
+function updateGistLink() {
+  const el = document.getElementById('cloudGistLink');
+  el.innerHTML = cloudGistId
+    ? `Gist ID: <a href="https://gist.github.com/${cloudGistId}" target="_blank" style="color:var(--daily)">${cloudGistId.slice(0,8)}…</a>`
+    : '';
+}
+
+function saveCloudToken() {
+  const inp = document.getElementById('cloudTokenInput').value.trim();
+  if (!inp || inp === '••••••••') { cloudCfg.style.display = 'none'; return; }
+  cloudToken = inp;
+  localStorage.setItem('tt_cloud_token', cloudToken);
+  cloudCfg.style.display = 'none';
+  pushToCloud();
+}
+
+function clearCloudToken() {
+  cloudToken = ''; cloudGistId = '';
+  localStorage.removeItem('tt_cloud_token');
+  localStorage.removeItem('tt_cloud_gist');
+  cloudCfg.style.display = 'none';
+  setChip('idle', '☁ 未配置');
+}
+
+function getCloudPayload() {
+  return JSON.stringify({
+    tasks, bigTasks, dailyDefs, done, uid,
+    totalAllTime, totalToday, skippedTasks, shelvedTasks,
+    homeTasks, workMode, smallCount,
+    left, total, curId: cur ? cur.id : -1,
+    savedDate: todayStr()
+  });
+}
+
+function applyCloudPayload(raw) {
+  try {
+    const d = JSON.parse(raw);
+    if (d.tasks      !== undefined) tasks        = d.tasks;
+    if (d.bigTasks   !== undefined) bigTasks     = d.bigTasks;
+    if (d.dailyDefs  !== undefined) dailyDefs    = d.dailyDefs;
+    if (d.done       !== undefined) done         = d.done;
+    if (d.uid        !== undefined) uid          = d.uid;
+    if (d.totalAllTime !== undefined) totalAllTime = d.totalAllTime;
+    if (d.totalToday !== undefined && d.savedDate === todayStr()) totalToday = d.totalToday;
+    if (d.skippedTasks !== undefined && d.savedDate === todayStr()) skippedTasks = d.skippedTasks;
+    if (d.shelvedTasks !== undefined) shelvedTasks = d.shelvedTasks;
+    if (d.homeTasks  !== undefined) homeTasks    = d.homeTasks;
+    if (d.workMode   !== undefined) workMode     = d.workMode;
+    if (d.smallCount !== undefined) smallCount   = d.smallCount;
+    if (d.left       !== undefined) _savedLeft   = d.left;
+    if (d.total      !== undefined) _savedTotal  = d.total;
+    if (d.curId      !== undefined) _savedCurId  = d.curId;
+    renderContext();
+    checkDailyTasks();
+    if (tasks.length > 0) loadNext();
+    else { renderAll(); updateStats(); }
+  } catch(e) { console.error('Cloud apply failed', e); }
+}
+
+async function loadFromCloud() {
+  if (!cloudToken || !cloudGistId) return;
+  setChip('syncing', '↻ 同步中…');
+  try {
+    const res = await fetch(`https://api.github.com/gists/${cloudGistId}`, {
+      headers: { Authorization: `token ${cloudToken}`, Accept: 'application/vnd.github+json' }
+    });
+    if (!res.ok) throw new Error(res.status);
+    const gist = await res.json();
+    const content = gist.files?.['timer_data.json']?.content;
+    if (content) applyCloudPayload(content);
+    setChip('ok', '☁ 已同步');
+  } catch(e) {
+    console.error('Cloud load error', e);
+    setChip('error', '⚠ 同步失败');
+  }
+}
+
+async function pushToCloud() {
+  if (!cloudToken) return;
+  setChip('syncing', '↻ 同步中…');
+  const body = JSON.stringify({
+    description: 'Timer Advanced — task data',
+    public: false,
+    files: { 'timer_data.json': { content: getCloudPayload() } }
+  });
+  const headers = {
+    Authorization: `token ${cloudToken}`,
+    'Content-Type': 'application/json',
+    Accept: 'application/vnd.github+json'
+  };
+  try {
+    let res;
+    if (cloudGistId) {
+      res = await fetch(`https://api.github.com/gists/${cloudGistId}`, { method: 'PATCH', headers, body });
+    } else {
+      res = await fetch('https://api.github.com/gists', { method: 'POST', headers, body });
+    }
+    if (!res.ok) throw new Error(res.status);
+    const gist = await res.json();
+    if (!cloudGistId) {
+      cloudGistId = gist.id;
+      localStorage.setItem('tt_cloud_gist', cloudGistId);
+      updateGistLink();
+    }
+    setChip('ok', '☁ 已同步');
+  } catch(e) {
+    console.error('Cloud push error', e);
+    setChip('error', '⚠ 同步失败');
+  }
+}
+
+function debouncePush() {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(pushToCloud, 3000);
+}
+
+function initCloud() {
+  cloudToken  = localStorage.getItem('tt_cloud_token') || '';
+  cloudGistId = localStorage.getItem('tt_cloud_gist')  || '';
+  if (cloudToken) {
+    setChip('syncing', '↻ 同步中…');
+    loadFromCloud();
+  } else {
+    setChip('idle', '☁ 未配置');
+  }
+}
+
 // ── Init ──
 load();
 renderContext();
 checkDailyTasks();
 if (tasks.length > 0) loadNext();
 else { renderAll(); updateStats(); }
+initCloud();
 </script>
 
 <!-- Edit Time Modal -->

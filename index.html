@@ -343,6 +343,11 @@
       <div class="stat-value" id="statCtx" style="font-size:0.9rem">公司</div>
       <div class="stat-sub"  id="statCtxSub">家庭任务已隐藏</div>
     </div>
+    <div class="stat-card" id="waterCard" style="display:none">
+      <div class="stat-label">💧 喝水</div>
+      <div class="stat-value" id="statWater" style="font-size:1.1rem">0</div>
+      <div class="stat-sub"  id="statWaterSub">杯</div>
+    </div>
   </div>
 
   <!-- Timer -->
@@ -851,6 +856,9 @@ function doComplete() {
   } else if (t.type === 'small') {
     t.count++;
     smallCount++;
+    const _td = todayStr();
+    if (t.dayCountDate !== _td) { t.dayCount = 0; t.dayCountDate = _td; }
+    t.dayCount = (t.dayCount || 0) + 1;
     if (taskActiveToday(t)) tasks.push(t); else dayHeldTasks.push(t);
     checkTriggers();
 
@@ -1029,11 +1037,23 @@ function fmtSub(sec) {
   const s = sec % 60;
   return `${h > 0 ? h+'小时' : ''}${m > 0 ? m+'分钟' : ''}${h===0&&m<10 ? s+'秒' : ''}` || '0秒';
 }
+function updateWater() {
+  const card = document.getElementById('waterCard');
+  const today = todayStr();
+  const allT = [...tasks, ...dayHeldTasks, ...skippedTasks.map(s => s.task), ...shelvedTasks];
+  const water = allT.filter(t => t.name && t.name.includes('喝水'));
+  if (water.length === 0) { card.style.display = 'none'; return; }
+  card.style.display = 'flex';
+  const count = water.reduce((sum, t) => sum + (t.dayCountDate === today ? (t.dayCount || 0) : 0), 0);
+  document.getElementById('statWater').textContent = count;
+  document.getElementById('statWaterSub').textContent = count === 0 ? '还没喝' : '杯';
+}
 function updateStats() {
   statToday.textContent    = fmtTime(totalToday);
   statTodaySub.textContent = fmtSub(totalToday);
   statTotal.textContent    = fmtTime(totalAllTime);
   statTotalSub.textContent = fmtSub(totalAllTime);
+  updateWater();
 }
 
 // ── Render ──

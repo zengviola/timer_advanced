@@ -733,6 +733,12 @@ function loadNext(autoStart = false) {
   running = false;
   overSecs = 0;
   timerStartedAt = null;
+  // Queue is empty but big tasks exist — promote them regardless of trigger count
+  if (tasks.length === 0 && bigTasks.length > 0) {
+    bigTasks.forEach(bt => tasks.push(bt));
+    bigTasks = [];
+    renderBig();
+  }
   cur = tasks.length > 0 ? tasks[0] : null;
   if (cur) {
     if (cur._left !== undefined) {
@@ -782,9 +788,9 @@ function tick() {
     totalToday   = todayAtResume + elapsed;
     if (elapsed % 30 === 0) save();
   } else {
-    // At or past deadline: cap stats at zero-crossing, count overtime
-    totalAllTime = totalAtResume + leftAtResume;
-    totalToday   = todayAtResume + leftAtResume;
+    // At or past deadline: count all elapsed time including overtime
+    totalAllTime = totalAtResume + elapsed;
+    totalToday   = todayAtResume + elapsed;
     left     = 0;
     overSecs = -newLeft;
     if (!alarmFired) {

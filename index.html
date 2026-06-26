@@ -251,6 +251,13 @@
     }
     .edit-btn:hover { color: var(--text); background: var(--surf2); }
 
+    .day-btn {
+      flex: 1; border: none; padding: 7px 0; font-size: 0.72rem; font-weight: 700;
+      cursor: pointer; font-family: inherit; background: transparent; color: var(--muted);
+      transition: background .2s, color .2s;
+    }
+    .day-btn.on { background: var(--surf3); color: var(--text); border-radius: 4px; }
+
     /* ── Sync Chip ── */
     .sync-row { display: flex; align-items: center; justify-content: center; gap: 8px; }
     .sync-chip {
@@ -455,6 +462,20 @@
       </div>
     </div>
 
+    <!-- Day restriction -->
+    <div class="fg">
+      <label class="fl">出现的日子 <span style="color:var(--surf3);font-weight:400;text-transform:none">(不选 = 每天)</span></label>
+      <div style="display:flex;border-radius:8px;overflow:hidden;background:var(--surf2)">
+        <button class="day-btn" data-d="1" onclick="toggleSelDay(1)">一</button>
+        <button class="day-btn" data-d="2" onclick="toggleSelDay(2)">二</button>
+        <button class="day-btn" data-d="3" onclick="toggleSelDay(3)">三</button>
+        <button class="day-btn" data-d="4" onclick="toggleSelDay(4)">四</button>
+        <button class="day-btn" data-d="5" onclick="toggleSelDay(5)">五</button>
+        <button class="day-btn" data-d="6" onclick="toggleSelDay(6)">六</button>
+        <button class="day-btn" data-d="0" onclick="toggleSelDay(0)">日</button>
+      </div>
+    </div>
+
     <!-- Big trigger config -->
     <div class="trig-cfg" id="trigCfg" style="display:none">
       <div class="trig-title">大循环 · 每隔多少次小循环触发一次</div>
@@ -503,6 +524,8 @@ let smallCount    = 0;   // cumulative small-cycle completions (drives big-cycle
 let workMode      = true;  // true = 在公司, false = 不在公司
 let homeTasks     = [];    // 家-tagged tasks held aside while in work mode
 let selTag        = '';    // selected tag in add form
+let selDays       = [];    // selected days for add form ([] = every day)
+let dayHeldTasks  = [];    // tasks held because today isn't their day
 
 // DOM
 const timerSec  = document.getElementById('timerSection');
@@ -617,15 +640,15 @@ function addTask() {
 
   if (selType === 'big') {
     const nEl = document.getElementById('iTriN');
-    bigTasks.push({
-      id: uid++, name, duration: mins * 60, type: 'big', count: 0,
-      trigEvery: Math.max(1, parseInt(nEl?.value) || 20)
-    });
+    const bt = { id: uid++, name, duration: mins * 60, type: 'big', count: 0, trigEvery: Math.max(1, parseInt(nEl?.value) || 20) };
+    if (selDays.length > 0) bt.days = selDays.slice();
+    bigTasks.push(bt);
     renderBig();
 
   } else if (selType === 'daily') {
     // Create definition and immediately inject into today's queue
     const def = { id: uid++, name, duration: mins * 60, type: 'daily', count: 0, lastCompleted: null };
+    if (selDays.length > 0) def.days = selDays.slice();
     dailyDefs.push(def);
     injectDaily(def);   // add to active queue now
     renderDaily();
@@ -633,9 +656,12 @@ function addTask() {
   } else {
     const newTask = { id: uid++, name, duration: mins * 60, type: selType, count: 0 };
     if (selTag) newTask.tag = selTag;
+    if (selDays.length > 0) newTask.days = selDays.slice();
     // If home-tagged task added while in work mode, hold it aside
     if (newTask.tag === '家' && workMode) {
       homeTasks.push(newTask);
+    } else if (!taskActiveToday(newTask)) {
+      dayHeldTasks.push(newTask);
     } else {
       pushTop(newTask);
       if (!cur) loadNext();
@@ -679,6 +705,7 @@ function cutIn() {
 function injectDaily(def) {
   const today = todayStr();
   if (def.lastCompleted === today) return;
+  if (!taskActiveToday(def)) return;
   const alreadyIn = tasks.some(t => t.dailyId === def.id);
   if (alreadyIn) return;
   const task = { id: uid++, name: def.name, duration: def.duration, type: 'daily', dailyId: def.id, count: def.count };
@@ -694,6 +721,7 @@ function checkDailyTasks() {
   dailyDefs.forEach(def => {
     if (def.lastCompleted === today) return;
     if (def.skippedToday === today) return;  // skipped for today
+    if (!taskActiveToday(def)) return;
     const alreadyIn = tasks.some(t => t.dailyId === def.id);
     if (alreadyIn) return;
     const task = { id: uid++, name: def.name, duration: def.duration, type: 'daily', dailyId: def.id, count: def.count };
@@ -823,7 +851,7 @@ function doComplete() {
   } else if (t.type === 'small') {
     t.count++;
     smallCount++;
-    tasks.push(t);          // small cycle → END of queue
+    if (taskActiveToday(t)) tasks.push(t); else dayHeldTasks.push(t);
     checkTriggers();
 
   } else if (t.type === 'big') {
@@ -862,7 +890,7 @@ function checkTriggers() {
     return true;
   });
   if (fired.length > 0) {
-    fired.forEach(bt => pushTop(bt));
+    fired.forEach(bt => { if (taskActiveToday(bt)) pushTop(bt); else dayHeldTasks.push(bt); });
     renderBig();
   }
 }
@@ -1093,6 +1121,7 @@ function renderQ() {
   qList.innerHTML = up.map((t, i) => {
     const mins   = Math.ceil(t.duration / 60);
     const lp     = (t.type === 'small' || t.type === 'big') && t.count > 0 ? `<span class="pill">×${t.count}</span>` : '';
+    const dayP   = t.days && t.days.length > 0 ? `<span class="pill">${fmtDays(t.days)}</span>` : '';
     const topTag = i === 0 ? `<span class="top-tag">Next</span>` : '';
     return `<div class="card c-${t.type}${i === 0 ? ' slide-in' : ''}">
       <div style="min-width:20px;text-align:center;font-size:.75rem;color:var(--muted);font-weight:700">${i + 2}</div>
@@ -1102,7 +1131,7 @@ function renderQ() {
           <span>${mins} 分钟 <button class="edit-btn" onclick="openEditModal(${t.id},'queue')">✏</button></span>
           <span class="badge b-${t.type}" style="cursor:pointer" onclick="openEditModal(${t.id},'queue')" title="点击修改类型/时长">${tn(t.type)}</span>
           ${t.tag ? `<span class="pill" style="background:var(--surf3)">🏠 ${esc(t.tag)}</span>` : ''}
-          ${lp}${topTag}
+          ${lp}${dayP}${topTag}
         </div>
       </div>
       <button class="rm-btn" onclick="removeTask(${t.id})">✕</button>
@@ -1203,6 +1232,31 @@ document.addEventListener('keydown', e => {
 });
 
 // ── Helpers ──
+function todayDay() { return new Date().getDay(); }
+const DAY_NAMES = ['日','一','二','三','四','五','六'];
+function fmtDays(days) {
+  if (!days || days.length === 0) return '';
+  return '仅周' + [...days].sort().map(d => DAY_NAMES[d]).join('');
+}
+function taskActiveToday(task) {
+  if (!task.days || task.days.length === 0) return true;
+  return task.days.includes(todayDay());
+}
+function toggleSelDay(d) {
+  const idx = selDays.indexOf(d);
+  if (idx >= 0) selDays.splice(idx, 1); else selDays.push(d);
+  document.querySelectorAll('.day-btn').forEach(b => {
+    b.classList.toggle('on', selDays.includes(parseInt(b.dataset.d)));
+  });
+}
+function checkDayHeld() {
+  const active = dayHeldTasks.filter(t => taskActiveToday(t));
+  if (active.length === 0) return;
+  dayHeldTasks = dayHeldTasks.filter(t => !taskActiveToday(t));
+  active.forEach(t => pushTop(t));
+  if (!cur) loadNext(); else renderQ();
+  save();
+}
 function todayStr() {
   return new Date().toLocaleDateString('en-CA'); // "YYYY-MM-DD"
 }
@@ -1237,6 +1291,7 @@ function save() {
     localStorage.setItem('tt_homeTasks',  JSON.stringify(homeTasks));
     localStorage.setItem('tt_workMode',   workMode ? '1' : '0');
     localStorage.setItem('tt_smallCount', smallCount);
+    localStorage.setItem('tt_dayHeld',    JSON.stringify(dayHeldTasks));
   } catch(_) {}
   debouncePush();
 }
@@ -1272,6 +1327,8 @@ function load() {
     if (sk && tdd === todayStr()) skippedTasks = JSON.parse(sk);
     const sh = localStorage.getItem('tt_shelved');
     if (sh) shelvedTasks = JSON.parse(sh);
+    const dh = localStorage.getItem('tt_dayHeld');
+    if (dh) dayHeldTasks = JSON.parse(dh);
     if (l)  _savedLeft  = parseInt(l);
     if (tot)_savedTotal = parseInt(tot);
     if (ci) _savedCurId = parseInt(ci);
@@ -1303,6 +1360,7 @@ setInterval(() => {
     else renderQ();
   }
   checkDailyTasks();
+  checkDayHeld();
 }, 60 * 1000);
 
 // ── Edit Modal ──
@@ -1601,6 +1659,7 @@ function initCloud() {
 load();
 renderContext();
 checkDailyTasks();
+checkDayHeld();
 if (tasks.length > 0) loadNext();
 else { renderAll(); updateStats(); }
 initCloud();

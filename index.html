@@ -6,341 +6,268 @@
   <title>任务计时器</title>
   <style>
     :root {
-      --bg: #0f172a;
-      --surface: #1e293b;
-      --surface2: #334155;
-      --surface3: #475569;
-      --accent-once: #3b82f6;
-      --accent-recurring: #10b981;
-      --text: #e2e8f0;
-      --text-muted: #94a3b8;
+      --bg:     #0f172a;
+      --surf:   #1e293b;
+      --surf2:  #334155;
+      --surf3:  #475569;
+      --once:   #3b82f6;
+      --small:  #10b981;
+      --big:    #8b5cf6;
+      --daily:  #0ea5e9;
+      --text:   #e2e8f0;
+      --muted:  #94a3b8;
       --danger: #ef4444;
-      --warn: #f59e0b;
-      --radius: 14px;
+      --warn:   #f59e0b;
+      --r:      14px;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: var(--bg);
-      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg); color: var(--text);
       min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 28px 16px 48px;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 28px 16px 60px;
     }
 
-    .app {
-      width: 100%;
-      max-width: 500px;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
+    .app { width: 100%; max-width: 500px; display: flex; flex-direction: column; gap: 20px; }
+    .app-title { font-size: 1.4rem; font-weight: 800; text-align: center; }
 
-    .app-title {
-      font-size: 1.4rem;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-      color: var(--text);
-      text-align: center;
-    }
-
-    /* ── Timer Section ── */
+    /* ── Timer ── */
     .timer-section {
-      background: var(--surface);
-      border-radius: var(--radius);
+      background: var(--surf); border-radius: var(--r);
       padding: 28px 24px 22px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 18px;
+      display: flex; flex-direction: column; align-items: center; gap: 18px;
     }
-
-    .current-task-name {
-      font-size: 1.15rem;
-      font-weight: 700;
-      text-align: center;
-      line-height: 1.3;
-    }
-
-    .task-meta-row {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      justify-content: center;
-      flex-wrap: wrap;
-    }
-
-    .badge {
-      font-size: 0.72rem;
-      font-weight: 700;
-      padding: 3px 10px;
-      border-radius: 999px;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-    }
-    .badge-once     { background: rgba(59,130,246,.18); color: var(--accent-once); }
-    .badge-recurring{ background: rgba(16,185,129,.18); color: var(--accent-recurring); }
-
-    .loop-count {
-      font-size: 0.8rem;
-      color: var(--text-muted);
-    }
-
-    /* SVG Ring */
-    .timer-ring {
-      position: relative;
-      width: 190px;
-      height: 190px;
-    }
-
+    .timer-ring { position: relative; width: 190px; height: 190px; }
     .timer-ring svg { transform: rotate(-90deg); }
-
-    .bg-circle {
-      fill: none;
-      stroke: var(--surface2);
-      stroke-width: 9;
-    }
-
+    .bg-circle { fill: none; stroke: var(--surf2); stroke-width: 9; }
     .progress-circle {
-      fill: none;
-      stroke-width: 9;
-      stroke-linecap: round;
+      fill: none; stroke-width: 9; stroke-linecap: round;
       transition: stroke-dashoffset 1s linear, stroke 0.4s;
     }
-
     .timer-center {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 2px;
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
     }
-
     .timer-time {
-      font-size: 2.8rem;
-      font-weight: 800;
-      font-variant-numeric: tabular-nums;
-      letter-spacing: -0.03em;
-      line-height: 1;
+      font-size: 2.8rem; font-weight: 800; line-height: 1;
+      font-variant-numeric: tabular-nums; letter-spacing: -0.03em;
+    }
+    .timer-sub { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+
+    .cur-name { font-size: 1.15rem; font-weight: 700; text-align: center; }
+    .cur-meta { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 6px; flex-wrap: wrap; }
+
+    .badge {
+      font-size: 0.68rem; font-weight: 700; padding: 3px 10px;
+      border-radius: 999px; letter-spacing: 0.04em; text-transform: uppercase;
+    }
+    .b-once  { background: rgba(59,130,246,.18);  color: var(--once); }
+    .b-small { background: rgba(16,185,129,.18);   color: var(--small); }
+    .b-big   { background: rgba(139,92,246,.18);   color: var(--big); }
+    .b-daily { background: rgba(14,165,233,.18);   color: var(--daily); }
+
+    .pill {
+      font-size: 0.7rem; font-weight: 700; padding: 2px 9px;
+      border-radius: 999px; background: var(--surf2); color: var(--muted);
     }
 
-    .timer-label {
-      font-size: 0.72rem;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-
-    /* Controls */
-    .timer-controls {
-      display: flex;
-      gap: 10px;
-    }
-
+    .ctrl { display: flex; gap: 10px; }
     .btn {
-      border: none;
-      border-radius: 9px;
-      padding: 10px 22px;
-      font-size: 0.88rem;
-      font-weight: 700;
-      cursor: pointer;
-      transition: opacity .15s, transform .1s, background .2s;
-      font-family: inherit;
+      border: none; border-radius: 9px; padding: 10px 22px;
+      font-size: 0.88rem; font-weight: 700; cursor: pointer;
+      font-family: inherit; transition: opacity .15s, transform .1s;
     }
     .btn:hover:not(:disabled) { opacity: .85; }
     .btn:active:not(:disabled) { transform: scale(.96); }
     .btn:disabled { opacity: .35; cursor: not-allowed; }
-    .btn-sm { padding: 6px 13px; font-size: 0.78rem; }
+    .btn-sm { padding: 6px 12px; font-size: 0.78rem; }
+    .btn-muted { background: var(--surf2); color: var(--muted); }
 
-    .btn-start    { background: var(--accent-once);      color: #fff; min-width: 80px; }
-    .btn-complete { background: var(--accent-recurring);  color: #fff; }
-    .btn-reset    { background: var(--surface2);          color: var(--text); }
-    .btn-danger   { background: var(--danger);            color: #fff; }
-    .btn-muted    { background: var(--surface2);          color: var(--text-muted); }
+    .no-task { color: var(--muted); font-size: 0.9rem; }
+    .hint { font-size: 0.7rem; color: var(--surf3); }
 
-    .no-task-msg {
-      color: var(--text-muted);
-      text-align: center;
-      font-size: 0.9rem;
-      padding: 10px 0;
-    }
-
-    .shortcut-hint {
-      font-size: 0.72rem;
-      color: var(--surface3);
-      letter-spacing: 0.02em;
-    }
-
-    /* ── Section ── */
+    /* ── Sections ── */
     .section { display: flex; flex-direction: column; gap: 10px; }
-
-    .section-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+    .sec-head { display: flex; align-items: center; justify-content: space-between; }
+    .sec-label {
+      font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--muted);
     }
-
-    .section-label {
-      font-size: 0.72rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--text-muted);
-    }
-
-    .empty-msg {
-      text-align: center;
-      color: var(--surface3);
-      font-size: 0.85rem;
-      padding: 14px;
-      background: var(--surface);
-      border-radius: 10px;
+    .empty {
+      text-align: center; color: var(--surf3); font-size: 0.85rem;
+      padding: 14px; background: var(--surf); border-radius: 10px;
     }
 
     /* ── Task Cards ── */
-    .task-card {
-      background: var(--surface);
-      border-radius: 10px;
-      padding: 12px 14px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
+    .card {
+      background: var(--surf); border-radius: 10px;
+      padding: 12px 14px; display: flex; align-items: center; gap: 12px;
       border-left: 3px solid transparent;
     }
-    .task-card.type-once      { border-left-color: var(--accent-once); }
-    .task-card.type-recurring { border-left-color: var(--accent-recurring); }
-    .task-card.done           { opacity: .5; }
+    .c-once  { border-left-color: var(--once); }
+    .c-small { border-left-color: var(--small); }
+    .c-big   { border-left-color: var(--big); }
+    .c-daily { border-left-color: var(--daily); }
+    .c-done  { opacity: .5; }
 
     .card-body { flex: 1; min-width: 0; }
-
     .card-name {
-      font-size: 0.92rem;
-      font-weight: 600;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      font-size: 0.92rem; font-weight: 600;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    .done .card-name { text-decoration: line-through; }
-
+    .c-done .card-name { text-decoration: line-through; }
     .card-sub {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      margin-top: 3px;
-      font-size: 0.75rem;
-      color: var(--text-muted);
+      display: flex; gap: 7px; align-items: center;
+      margin-top: 3px; font-size: 0.75rem; color: var(--muted); flex-wrap: wrap;
     }
 
-    .loop-pill {
-      background: rgba(16,185,129,.18);
-      color: var(--accent-recurring);
-      border-radius: 999px;
-      padding: 1px 8px;
-      font-weight: 700;
-      font-size: 0.7rem;
+    .trig-bar { width: 100%; height: 4px; background: var(--surf2); border-radius: 999px; margin-top: 7px; }
+    .trig-fill { height: 100%; background: var(--big); border-radius: 999px; transition: width .4s; }
+
+    .rm-btn {
+      border: none; background: none; color: var(--surf3); cursor: pointer;
+      font-size: 1rem; padding: 4px 6px; border-radius: 6px;
+      transition: color .15s, background .15s; flex-shrink: 0;
+    }
+    .rm-btn:hover { color: var(--danger); background: rgba(239,68,68,.1); }
+    .check { font-size: 1.1rem; color: var(--small); }
+    .done-daily { font-size: 1.1rem; color: var(--daily); }
+
+    .top-tag {
+      font-size: 0.62rem; font-weight: 800; padding: 1px 6px;
+      border-radius: 4px; background: rgba(245,158,11,.18); color: var(--warn);
+      text-transform: uppercase; letter-spacing: 0.06em;
     }
 
-    .check-icon { font-size: 1.1rem; color: var(--accent-recurring); }
-    .remove-btn {
-      border: none;
-      background: none;
-      color: var(--surface3);
-      cursor: pointer;
-      font-size: 1rem;
-      padding: 4px 6px;
-      border-radius: 6px;
-      transition: color .15s, background .15s;
+    /* Daily section card (habit overview) */
+    .daily-card {
+      background: var(--surf); border-radius: 10px;
+      padding: 12px 14px; display: flex; align-items: center; gap: 12px;
+      border-left: 3px solid var(--daily);
     }
-    .remove-btn:hover { color: var(--danger); background: rgba(239,68,68,.1); }
+    .daily-card.day-done { opacity: .55; }
+    .daily-status-dot {
+      width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+    }
+    .dot-done    { background: var(--small); }
+    .dot-pending { background: var(--surf3); }
+    .dot-queue   { background: var(--daily); box-shadow: 0 0 0 3px rgba(14,165,233,.25); }
 
     /* ── Add Form ── */
     .add-form {
-      background: var(--surface);
-      border-radius: var(--radius);
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
+      background: var(--surf); border-radius: var(--r);
+      padding: 20px; display: flex; flex-direction: column; gap: 14px;
     }
-
     .form-row { display: flex; gap: 10px; }
+    .fg { display: flex; flex-direction: column; gap: 5px; flex: 1; }
+    .fl { font-size: 0.75rem; font-weight: 600; color: var(--muted); }
 
-    .form-group {
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
-      flex: 1;
-    }
-
-    .form-label {
-      font-size: 0.75rem;
-      font-weight: 600;
-      color: var(--text-muted);
-    }
-
-    input[type=text], input[type=number] {
-      background: var(--surface2);
-      border: 1.5px solid transparent;
-      border-radius: 8px;
-      padding: 9px 12px;
-      color: var(--text);
-      font-size: 0.9rem;
-      outline: none;
-      font-family: inherit;
-      width: 100%;
+    input[type=text], input[type=number], select {
+      background: var(--surf2); border: 1.5px solid transparent;
+      border-radius: 8px; padding: 9px 12px; color: var(--text);
+      font-size: 0.9rem; outline: none; font-family: inherit; width: 100%;
       transition: border-color .15s;
     }
-    input:focus { border-color: var(--accent-once); }
+    input:focus, select:focus { border-color: var(--once); }
+    select option { background: var(--surf2); }
 
-    .type-toggle {
-      display: flex;
-      border-radius: 8px;
-      overflow: hidden;
-      background: var(--surface2);
-    }
-
+    .type-toggle { display: flex; border-radius: 8px; overflow: hidden; background: var(--surf2); }
     .type-btn {
-      flex: 1;
-      border: none;
-      padding: 9px 8px;
-      font-size: 0.82rem;
-      font-weight: 700;
-      cursor: pointer;
-      font-family: inherit;
-      background: transparent;
-      color: var(--text-muted);
+      flex: 1; border: none; padding: 8px 2px; font-size: 0.74rem; font-weight: 700;
+      cursor: pointer; font-family: inherit; background: transparent; color: var(--muted);
       transition: background .2s, color .2s;
     }
-    .type-btn.active-once      { background: var(--accent-once);      color: #fff; border-radius: 8px; }
-    .type-btn.active-recurring { background: var(--accent-recurring); color: #fff; border-radius: 8px; }
+    .type-btn.on { color: #fff; border-radius: 8px; }
+    .type-btn.on-once  { background: var(--once); }
+    .type-btn.on-small { background: var(--small); }
+    .type-btn.on-big   { background: var(--big); }
+    .type-btn.on-daily { background: var(--daily); }
 
-    .btn-add-task {
-      background: var(--accent-once);
-      color: #fff;
-      border: none;
-      border-radius: 9px;
-      padding: 11px;
-      font-size: 0.92rem;
-      font-weight: 700;
-      cursor: pointer;
-      font-family: inherit;
-      transition: opacity .15s, transform .1s;
+    .trig-cfg {
+      background: rgba(139,92,246,.08); border: 1px solid rgba(139,92,246,.2);
+      border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px;
     }
-    .btn-add-task:hover { opacity: .88; }
-    .btn-add-task:active { transform: scale(.98); }
+    .trig-title { font-size: 0.8rem; color: var(--big); font-weight: 700; }
+    .warn-msg { font-size: 0.82rem; color: var(--warn); text-align: center; padding: 6px; }
 
-    /* ── Alarm flash ── */
-    @keyframes alarm-pulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,.4); }
-      50%       { box-shadow: 0 0 0 14px rgba(245,158,11,0); }
+    .daily-info-box {
+      background: rgba(14,165,233,.08); border: 1px solid rgba(14,165,233,.2);
+      border-radius: 10px; padding: 12px 14px;
+      font-size: 0.82rem; color: var(--daily); line-height: 1.5;
     }
-    .timer-section.alarm { animation: alarm-pulse 0.8s 3; }
+
+    .btn-add {
+      border: none; border-radius: 9px; padding: 11px; font-size: 0.92rem;
+      font-weight: 700; cursor: pointer; font-family: inherit;
+      color: #fff; background: var(--once);
+      transition: opacity .15s, transform .1s, background .2s;
+    }
+    .btn-add:hover { opacity: .88; }
+    .btn-add:active { transform: scale(.98); }
+
+    /* ── Animations ── */
+    @keyframes alarm {
+      0%,100% { box-shadow: 0 0 0 0 rgba(245,158,11,.4); }
+      50%      { box-shadow: 0 0 0 16px rgba(245,158,11,0); }
+    }
+    .alarm { animation: alarm 0.8s 3; }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .slide-in { animation: slideIn .25s ease; }
+
+    /* ── Edit Modal ── */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,.6);
+      z-index: 100; display: flex; align-items: center; justify-content: center;
+    }
+    .modal-box {
+      background: var(--surf); border-radius: var(--r);
+      padding: 24px; width: 280px; display: flex; flex-direction: column; gap: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.5);
+      animation: slideIn .2s ease;
+    }
+    .modal-title { font-size: 1rem; font-weight: 700; }
+    .modal-task-name { font-size: 0.82rem; color: var(--muted); }
+    .modal-btns { display: flex; gap: 10px; }
+    .modal-btns button {
+      flex: 1; border: none; border-radius: 8px; padding: 10px;
+      font-size: 0.88rem; font-weight: 700; cursor: pointer; font-family: inherit;
+      transition: opacity .15s;
+    }
+    .modal-btns button:hover { opacity: .85; }
+    .btn-cancel { background: var(--surf2); color: var(--muted); }
+    .btn-save   { background: var(--once); color: #fff; }
+
+    .edit-btn {
+      border: none; background: none; color: var(--surf3); cursor: pointer;
+      font-size: 0.75rem; padding: 2px 5px; border-radius: 4px;
+      transition: color .15s, background .15s;
+    }
+    .edit-btn:hover { color: var(--text); background: var(--surf2); }
+
+    /* ── Stats Bar ── */
+    .stats-bar {
+      display: flex; gap: 10px;
+    }
+    .stat-card {
+      flex: 1; background: var(--surf); border-radius: 10px;
+      padding: 12px 16px; display: flex; flex-direction: column; gap: 3px;
+    }
+    .stat-label {
+      font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--muted);
+    }
+    .stat-value {
+      font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums;
+      letter-spacing: -0.02em;
+    }
+    .stat-sub { font-size: 0.7rem; color: var(--surf3); }
   </style>
 </head>
 <body>
@@ -348,406 +275,1177 @@
 
   <div class="app-title">⏱ 任务计时器</div>
 
+  <!-- Stats Bar -->
+  <div class="stats-bar">
+    <div class="stat-card">
+      <div class="stat-label">今日已用</div>
+      <div class="stat-value" id="statToday">0m</div>
+      <div class="stat-sub" id="statTodaySub">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">累计总时</div>
+      <div class="stat-value" id="statTotal">0m</div>
+      <div class="stat-sub" id="statTotalSub">—</div>
+    </div>
+    <div class="stat-card" id="ctxCard" style="cursor:pointer;user-select:none" onclick="toggleContext()" title="切换位置">
+      <div class="stat-label">当前位置</div>
+      <div class="stat-value" id="statCtx" style="font-size:0.9rem">公司</div>
+      <div class="stat-sub"  id="statCtxSub">家庭任务已隐藏</div>
+    </div>
+  </div>
+
   <!-- Timer -->
   <div class="timer-section" id="timerSection">
+    <div id="curInfo" class="no-task">暂无任务，在下方添加任务开始</div>
 
-    <div id="currentInfo" class="no-task-msg">暂无任务，在下方添加任务开始</div>
-
-    <div class="timer-ring" id="timerRing" style="display:none">
+    <div id="timerRing" class="timer-ring" style="display:none">
       <svg width="190" height="190" viewBox="0 0 190 190">
         <circle class="bg-circle" cx="95" cy="95" r="86"/>
-        <circle class="progress-circle" id="progressCircle"
+        <circle class="progress-circle" id="prog"
           cx="95" cy="95" r="86"
-          stroke-dasharray="540.35"
-          stroke-dashoffset="0"
-          stroke="var(--accent-once)"/>
+          stroke-dasharray="540.35" stroke-dashoffset="0" stroke="var(--once)"/>
       </svg>
       <div class="timer-center">
-        <div class="timer-time" id="timerDisplay">05:00</div>
-        <div class="timer-label" id="timerLabel">剩余时间</div>
+        <div class="timer-time" id="timerDisp">05:00</div>
+        <div class="timer-sub" id="timerSub">剩余时间</div>
       </div>
     </div>
 
-    <div class="timer-controls" id="timerControls" style="display:none">
-      <button class="btn btn-start"    id="btnStartPause">开始</button>
-      <button class="btn btn-complete" id="btnComplete">完成 ✓</button>
-      <button class="btn btn-reset"    id="btnReset">重置</button>
+    <div id="timerCtrl" style="display:none;flex-direction:column;align-items:center;gap:8px">
+      <div class="ctrl">
+        <button class="btn" id="btnSP" style="background:var(--once);color:#fff;min-width:80px">开始</button>
+        <button class="btn" id="btnDone" style="background:var(--small);color:#fff">完成 ✓</button>
+        <button class="btn btn-muted" id="btnReset">重置</button>
+      </div>
+      <div class="ctrl">
+        <button class="btn btn-muted" id="btnSkip">跳过</button>
+        <button class="btn" id="btnSkipToday" style="display:none;background:var(--warn);color:#fff">今日跳过</button>
+        <button class="btn" id="btnShelve" style="display:none;background:var(--surf3);color:var(--muted)">搁置</button>
+      </div>
     </div>
 
-    <div class="shortcut-hint" id="timerHint" style="display:none">
+    <div id="timerHint" class="hint" style="display:none">
       空格 暂停/继续 · Enter 完成 · Delete 跳过
     </div>
-
   </div>
 
-  <!-- Queue -->
+  <!-- Active Queue -->
   <div class="section">
-    <div class="section-header">
-      <span class="section-label">待办队列</span>
-      <span id="queueCountLabel" style="font-size:.78rem;color:var(--text-muted)"></span>
+    <div class="sec-head">
+      <span class="sec-label">待办队列</span>
+      <span id="qCnt" style="font-size:.78rem;color:var(--muted)"></span>
     </div>
-    <div id="queueList"></div>
+    <div id="qList"></div>
+  </div>
+
+  <!-- Daily Habit Overview -->
+  <div class="section" id="dailySec" style="display:none">
+    <div class="sec-head">
+      <span class="sec-label" style="color:var(--daily)">Daily · 今日习惯</span>
+    </div>
+    <div id="dailyList"></div>
+  </div>
+
+  <!-- Big Tasks Dormant -->
+  <div class="section" id="bigSec" style="display:none">
+    <div class="sec-head">
+      <span class="sec-label" style="color:var(--big)">大循环 · 首次等待触发</span>
+    </div>
+    <div id="bigList"></div>
+  </div>
+
+  <!-- Skipped Today -->
+  <div class="section" id="skippedSec" style="display:none">
+    <div class="sec-head">
+      <span class="sec-label" style="color:var(--warn)">今日跳过</span>
+    </div>
+    <div id="skippedList"></div>
+  </div>
+
+  <!-- Shelved (indefinite skip) -->
+  <div class="section" id="shelvedSec" style="display:none">
+    <div class="sec-head">
+      <span class="sec-label" style="color:var(--muted)">已搁置</span>
+    </div>
+    <div id="shelvedList"></div>
   </div>
 
   <!-- Completed -->
-  <div class="section" id="completedSection" style="display:none">
-    <div class="section-header">
-      <span class="section-label">已完成</span>
-      <button class="btn btn-muted btn-sm" id="btnClearDone">清除</button>
+  <div class="section" id="doneSec" style="display:none">
+    <div class="sec-head">
+      <span class="sec-label">已完成</span>
+      <button class="btn btn-muted btn-sm" id="btnClear">清除</button>
     </div>
-    <div id="completedList"></div>
+    <div id="doneList"></div>
   </div>
 
   <!-- Add Form -->
   <div class="add-form">
-    <div class="section-label">添加任务</div>
+    <div class="sec-label">添加任务</div>
 
-    <div class="form-group">
-      <label class="form-label" for="inputName">任务名称</label>
-      <input type="text" id="inputName" placeholder="例：阅读、运动、冥想…" maxlength="60" autocomplete="off">
+    <div class="fg">
+      <label class="fl">任务名称</label>
+      <input type="text" id="iName" placeholder="例：阅读、运动、冥想…" maxlength="60" autocomplete="off">
     </div>
 
     <div class="form-row">
-      <div class="form-group">
-        <label class="form-label" for="inputDuration">时长（分钟）</label>
-        <input type="number" id="inputDuration" value="5" min="1" max="999">
+      <div class="fg">
+        <label class="fl">时长（分钟）</label>
+        <input type="number" id="iDur" value="5" min="1" max="999">
       </div>
-      <div class="form-group">
-        <label class="form-label">类型</label>
+      <div class="fg">
+        <label class="fl">类型</label>
         <div class="type-toggle">
-          <button class="type-btn active-once"  id="btnTypeOnce"      data-type="once">一次性</button>
-          <button class="type-btn"              id="btnTypeRecurring" data-type="recurring">循环</button>
+          <button class="type-btn on on-once"  data-t="once">一次性</button>
+          <button class="type-btn"             data-t="small">小循环</button>
+          <button class="type-btn"             data-t="big">大循环</button>
+          <button class="type-btn"             data-t="daily">Daily</button>
+        </div>
+      </div>
+      <div class="fg">
+        <label class="fl">标签</label>
+        <div class="type-toggle" id="tagToggle">
+          <button class="type-btn on on-once" data-tag="" onclick="setSelTag('')">无</button>
+          <button class="type-btn"            data-tag="家" onclick="setSelTag('家')">🏠 家</button>
         </div>
       </div>
     </div>
 
-    <button class="btn-add-task" id="btnAddTask">＋ 添加到队列</button>
+    <!-- Big trigger config -->
+    <div class="trig-cfg" id="trigCfg" style="display:none">
+      <div class="trig-title">大循环 · 每隔多少次小循环触发一次</div>
+      <div id="trigBody"></div>
+    </div>
+
+    <!-- Daily info -->
+    <div class="daily-info-box" id="dailyInfoBox" style="display:none">
+      每天自动加入队列顶部，完成后标记今日已完成，次日重置。
+    </div>
+
+    <button class="btn-add" id="btnAdd">＋ 添加到队列顶部</button>
+    <button class="btn-add" id="btnCutIn" style="background:var(--warn);margin-top:6px">⚡ 插队，立即开始</button>
   </div>
 
 </div>
-
 <script>
-// ── Constants ──
-const CIRCUMFERENCE = 2 * Math.PI * 86; // ~540.35
+const CIRC = 2 * Math.PI * 86;
 
-// ── State ──
-let tasks        = [];   // all pending tasks; tasks[0] is always current
-let doneTasks    = [];   // one-time completed
-let currentTask  = null;
-let timeLeft     = 0;
-let totalTime    = 0;
-let running      = false;
-let ticker       = null;
-let selectedType = 'once';
-let uid          = 1;
+let tasks      = [];   // active queue; tasks[0] = current
+let bigTasks   = [];   // dormant big tasks (first-trigger only)
+let dailyDefs  = [];   // daily task definitions
+let done       = [];   // completed tasks (once + daily)
+let cur        = null;
+let left       = 0;
+let total      = 0;
+let running    = false;
+let ticker     = null;
+let selType    = 'once';
+let uid        = 1;
+let lastDay    = todayStr();
+let overSecs       = 0;     // seconds past deadline (0 = not overtime)
+let timerStartedAt = null;  // Date.now() when current run began
+let leftAtResume   = null;  // left value when run began
+let totalAtResume  = null;  // totalAllTime when run began
+let todayAtResume  = null;  // totalToday when run began
+let alarmFired     = false; // prevent repeat alarm animation
+let totalAllTime  = 0;
+let totalToday    = 0;
+let _savedLeft    = null;
+let _savedTotal   = null;
+let _savedCurId   = null;
+let skippedTasks  = [];  // { task, skippedDate } for small/big cycle skipped today
+let shelvedTasks  = [];  // tasks shelved indefinitely until manually restored
+let smallCount    = 0;   // cumulative small-cycle completions (drives big-cycle triggers)
+let workMode      = true;  // true = 在公司, false = 不在公司
+let homeTasks     = [];    // 家-tagged tasks held aside while in work mode
+let selTag        = '';    // selected tag in add form
 
-// ── DOM ──
-const timerSection   = document.getElementById('timerSection');
-const currentInfo    = document.getElementById('currentInfo');
-const timerRing      = document.getElementById('timerRing');
-const timerControls  = document.getElementById('timerControls');
-const timerHint      = document.getElementById('timerHint');
-const timerDisplay   = document.getElementById('timerDisplay');
-const timerLabel     = document.getElementById('timerLabel');
-const progressCircle = document.getElementById('progressCircle');
-const btnStartPause  = document.getElementById('btnStartPause');
-const btnComplete    = document.getElementById('btnComplete');
-const btnReset       = document.getElementById('btnReset');
-const queueList      = document.getElementById('queueList');
-const queueCountLbl  = document.getElementById('queueCountLabel');
-const completedSection = document.getElementById('completedSection');
-const completedList  = document.getElementById('completedList');
-const btnClearDone   = document.getElementById('btnClearDone');
-const inputName      = document.getElementById('inputName');
-const inputDuration  = document.getElementById('inputDuration');
-const btnAddTask     = document.getElementById('btnAddTask');
+// DOM
+const timerSec  = document.getElementById('timerSection');
+const curInfo   = document.getElementById('curInfo');
+const ring      = document.getElementById('timerRing');
+const ctrl      = document.getElementById('timerCtrl');
+const hint      = document.getElementById('timerHint');
+const disp      = document.getElementById('timerDisp');
+const timerSub  = document.getElementById('timerSub');
+const prog      = document.getElementById('prog');
+const btnSP     = document.getElementById('btnSP');
+const btnDone   = document.getElementById('btnDone');
+const btnReset  = document.getElementById('btnReset');
+const qList     = document.getElementById('qList');
+const qCnt      = document.getElementById('qCnt');
+const dailySec  = document.getElementById('dailySec');
+const dailyList = document.getElementById('dailyList');
+const bigSec    = document.getElementById('bigSec');
+const bigList   = document.getElementById('bigList');
+const doneSec   = document.getElementById('doneSec');
+const doneList  = document.getElementById('doneList');
+const btnClear  = document.getElementById('btnClear');
+const iName     = document.getElementById('iName');
+const iDur      = document.getElementById('iDur');
+const trigCfg   = document.getElementById('trigCfg');
+const trigBody  = document.getElementById('trigBody');
+const dailyInfoBox = document.getElementById('dailyInfoBox');
+const btnAdd    = document.getElementById('btnAdd');
+const btnCutIn  = document.getElementById('btnCutIn');
+const statToday    = document.getElementById('statToday');
+const statTodaySub = document.getElementById('statTodaySub');
+const statTotal    = document.getElementById('statTotal');
+const statTotalSub = document.getElementById('statTotalSub');
+const btnSkip      = document.getElementById('btnSkip');
+const btnSkipToday = document.getElementById('btnSkipToday');
+const btnShelve    = document.getElementById('btnShelve');
+const skippedSec   = document.getElementById('skippedSec');
+const skippedList  = document.getElementById('skippedList');
+const shelvedSec   = document.getElementById('shelvedSec');
+const shelvedList  = document.getElementById('shelvedList');
 
 // ── Type Toggle ──
-document.querySelectorAll('.type-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    selectedType = btn.dataset.type;
-    document.getElementById('btnTypeOnce').className =
-      'type-btn' + (selectedType === 'once' ? ' active-once' : '');
-    document.getElementById('btnTypeRecurring').className =
-      'type-btn' + (selectedType === 'recurring' ? ' active-recurring' : '');
-    // update add button color
-    btnAddTask.style.background = selectedType === 'recurring'
-      ? 'var(--accent-recurring)' : 'var(--accent-once)';
+document.querySelector('.type-toggle').addEventListener('click', e => {
+  const b = e.target.closest('.type-btn');
+  if (!b) return;
+  selType = b.dataset.t;
+  document.querySelectorAll('.type-btn').forEach(x => {
+    x.className = 'type-btn' + (x.dataset.t === selType ? ` on on-${selType}` : '');
   });
+  btnAdd.style.background = tc(selType);
+  trigCfg.style.display      = selType === 'big'   ? 'flex' : 'none';
+  dailyInfoBox.style.display = selType === 'daily' ? 'block' : 'none';
+  if (selType === 'big') renderTrigForm();
 });
 
+function renderTrigForm() {
+  trigBody.innerHTML = `
+    <div class="form-row">
+      <div class="fg">
+        <label class="fl">每完成多少次小循环触发</label>
+        <input type="number" id="iTriN" value="20" min="1" max="999">
+      </div>
+    </div>`;
+}
+
 // ── Add Task ──
-btnAddTask.addEventListener('click', addTask);
-inputName.addEventListener('keydown', e => { if (e.key === 'Enter') addTask(); });
+btnAdd.addEventListener('click', addTask);
+btnCutIn.addEventListener('click', cutIn);
+iName.addEventListener('keydown', e => { if (e.key === 'Enter') addTask(); });
 
-function addTask() {
-  const name = inputName.value.trim();
-  if (!name) { inputName.focus(); shake(inputName); return; }
-  const mins = Math.max(1, parseInt(inputDuration.value) || 5);
+function setSelTag(tag) {
+  selTag = tag;
+  document.querySelectorAll('#tagToggle .type-btn').forEach(b => {
+    b.className = 'type-btn' + (b.dataset.tag === tag ? ' on on-once' : '');
+  });
+}
 
-  tasks.push({ id: uid++, name, duration: mins * 60, type: selectedType, count: 0 });
-  inputName.value = '';
-  inputName.focus();
+function renderContext() {
+  document.getElementById('statCtx').textContent    = workMode ? '公司' : '家';
+  document.getElementById('statCtxSub').textContent = workMode ? '家庭任务已隐藏' : '显示所有任务';
+  document.getElementById('statCtx').style.color    = workMode ? 'var(--once)' : 'var(--small)';
+}
 
-  if (!currentTask) loadNext();
-  else renderQueue();
+function toggleContext() {
+  workMode = !workMode;
+  if (workMode) {
+    // Moving to work mode: pull 家-tagged tasks out of active queue
+    const pulled = tasks.filter(t => t.tag === '家');
+    tasks = tasks.filter(t => t.tag !== '家');
+    homeTasks.push(...pulled);
+    // If current task is home-tagged, stop and reload
+    if (cur && cur.tag === '家') {
+      clearInterval(ticker); running = false; overSecs = 0;
+      cur = null;
+      loadNext();
+    } else renderQ();
+  } else {
+    // Moving to home mode: restore held home tasks to top of queue
+    homeTasks.forEach(t => pushTop(t));
+    homeTasks = [];
+    if (!cur) loadNext();
+    else renderQ();
+  }
+  renderContext();
   save();
 }
 
-function shake(el) {
-  el.style.borderColor = 'var(--danger)';
-  setTimeout(() => { el.style.borderColor = ''; }, 700);
+function addTask() {
+  const name = iName.value.trim();
+  if (!name) { iName.focus(); flash(iName); return; }
+  const mins = Math.max(1, parseInt(iDur.value) || 5);
+
+  if (selType === 'big') {
+    const nEl = document.getElementById('iTriN');
+    bigTasks.push({
+      id: uid++, name, duration: mins * 60, type: 'big', count: 0,
+      trigEvery: Math.max(1, parseInt(nEl?.value) || 20)
+    });
+    renderBig();
+
+  } else if (selType === 'daily') {
+    // Create definition and immediately inject into today's queue
+    const def = { id: uid++, name, duration: mins * 60, type: 'daily', count: 0, lastCompleted: null };
+    dailyDefs.push(def);
+    injectDaily(def);   // add to active queue now
+    renderDaily();
+
+  } else {
+    const newTask = { id: uid++, name, duration: mins * 60, type: selType, count: 0 };
+    if (selTag) newTask.tag = selTag;
+    // If home-tagged task added while in work mode, hold it aside
+    if (newTask.tag === '家' && workMode) {
+      homeTasks.push(newTask);
+    } else {
+      pushTop(newTask);
+      if (!cur) loadNext();
+      else renderQ();
+    }
+  }
+
+  iName.value = '';
+  iName.focus();
+  if (selType === 'big') renderTrigForm();
+  save();
 }
 
-// ── Timer Logic ──
-function loadNext() {
+function cutIn() {
+  const name = iName.value.trim();
+  if (!name) { iName.focus(); flash(iName); return; }
+  if (selType === 'daily') { addTask(); return; }
+  const mins = Math.max(1, parseInt(iDur.value) || 5);
+  const newTask = { id: uid++, name, duration: mins * 60, type: selType, count: 0 };
+  if (selTag) newTask.tag = selTag;
+  // Big cycle cut-in: carry trigger info so it returns to dormant correctly after completion
+  if (selType === 'big') {
+    const nEl = document.getElementById('iTriN');
+    newTask.trigEvery = Math.max(1, parseInt(nEl?.value) || 20);
+  }
+
+  // Pause current task and save its remaining time onto the task object
+  if (cur) {
+    clearInterval(ticker); running = false; btnSP.textContent = '开始';
+    cur._left  = left;
+    cur._total = total;
+  }
+  tasks.unshift(newTask); // put new task at position 0
+  loadNext(true);         // start it immediately
+  iName.value = '';
+  iName.focus();
+  save();
+}
+
+// Inject a daily def into the active queue (if not already there and not done today)
+function injectDaily(def) {
+  const today = todayStr();
+  if (def.lastCompleted === today) return;
+  const alreadyIn = tasks.some(t => t.dailyId === def.id);
+  if (alreadyIn) return;
+  const task = { id: uid++, name: def.name, duration: def.duration, type: 'daily', dailyId: def.id, count: def.count };
+  pushTop(task);
+  if (!cur) loadNext();
+  else renderQ();
+}
+
+// Check all daily tasks (called on load and every minute)
+function checkDailyTasks() {
+  const today = todayStr();
+  let added = false;
+  dailyDefs.forEach(def => {
+    if (def.lastCompleted === today) return;
+    if (def.skippedToday === today) return;  // skipped for today
+    const alreadyIn = tasks.some(t => t.dailyId === def.id);
+    if (alreadyIn) return;
+    const task = { id: uid++, name: def.name, duration: def.duration, type: 'daily', dailyId: def.id, count: def.count };
+    pushTop(task);
+    added = true;
+  });
+  if (added) {
+    if (!cur) loadNext();
+    else renderQ();
+    renderDaily();
+    save();
+  }
+}
+
+function flash(el) {
+  el.style.outline = '2px solid var(--danger)';
+  setTimeout(() => el.style.outline = '', 600);
+}
+
+// Insert after current (position 1), or at 0 if empty
+function pushTop(task) {
+  if (tasks.length === 0) tasks.push(task);
+  else tasks.splice(1, 0, task);
+}
+
+// ── Timer ──
+function recordStart() {
+  timerStartedAt = Date.now();
+  leftAtResume   = left;
+  totalAtResume  = totalAllTime;
+  todayAtResume  = totalToday;
+  alarmFired     = false;
+}
+
+function loadNext(autoStart = false) {
   clearInterval(ticker);
   running = false;
-  if (tasks.length === 0) {
-    currentTask = null;
-    renderAll();
-    return;
+  overSecs = 0;
+  timerStartedAt = null;
+  cur = tasks.length > 0 ? tasks[0] : null;
+  if (cur) {
+    if (cur._left !== undefined) {
+      // Interrupted by cut-in: restore the saved remaining time
+      left = cur._left; total = cur._total || cur.duration;
+      delete cur._left; delete cur._total;
+    } else if (_savedCurId !== null && cur.id === _savedCurId && _savedLeft !== null) {
+      // Restore from page reload
+      left  = _savedLeft;
+      total = _savedTotal || cur.duration;
+      _savedCurId = _savedLeft = _savedTotal = null;
+    } else {
+      left = cur.duration; total = cur.duration;
+    }
   }
-  currentTask = tasks[0];
-  timeLeft    = currentTask.duration;
-  totalTime   = currentTask.duration;
   renderAll();
+  updateStats();
+  if (autoStart && cur) {
+    running = true;
+    recordStart();
+    ticker = setInterval(tick, 1000);
+    btnSP.textContent = '暂停';
+  }
 }
 
 function startPause() {
-  if (!currentTask) return;
+  if (!cur) return;
   running = !running;
   if (running) {
+    recordStart();
     ticker = setInterval(tick, 1000);
   } else {
     clearInterval(ticker);
+    timerStartedAt = null;
   }
-  btnStartPause.textContent = running ? '暂停' : '继续';
+  btnSP.textContent = running ? '暂停' : '继续';
 }
 
 function tick() {
-  if (timeLeft <= 0) {
-    clearInterval(ticker);
-    running = false;
-    triggerAlarm();
-    doComplete();
-    return;
+  if (!timerStartedAt || !running) return;
+  const elapsed = Math.floor((Date.now() - timerStartedAt) / 1000);
+  const newLeft  = leftAtResume - elapsed;
+
+  if (newLeft > 0) {
+    left         = newLeft;
+    totalAllTime = totalAtResume + elapsed;
+    totalToday   = todayAtResume + elapsed;
+    if (elapsed % 30 === 0) save();
+  } else {
+    // At or past deadline: cap stats at zero-crossing, count overtime
+    totalAllTime = totalAtResume + leftAtResume;
+    totalToday   = todayAtResume + leftAtResume;
+    left     = 0;
+    overSecs = -newLeft;
+    if (!alarmFired) {
+      alarmFired = true;
+      timerSec.classList.add('alarm');
+      timerSec.addEventListener('animationend', () => timerSec.classList.remove('alarm'), { once: true });
+    }
   }
-  timeLeft--;
-  refreshTimerDisplay();
+
+  refreshDisp();
+  updateStats();
 }
 
-function triggerAlarm() {
-  timerSection.classList.add('alarm');
-  timerSection.addEventListener('animationend', () => timerSection.classList.remove('alarm'), { once: true });
-}
+// Sync immediately when tab becomes visible again
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && running) tick();
+});
 
 function doComplete() {
-  if (!currentTask) return;
-  clearInterval(ticker);
-  running = false;
+  if (!cur) return;
+  clearInterval(ticker); running = false;
 
   const t = tasks.shift();
 
   if (t.type === 'once') {
     t.count = 1;
-    doneTasks.unshift(t);
-  } else {
+    done.unshift(t);
+    renderDone();
+
+  } else if (t.type === 'small') {
     t.count++;
-    tasks.push(t); // put at end
+    smallCount++;
+    tasks.push(t);          // small cycle → END of queue
+    checkTriggers();
+
+  } else if (t.type === 'big') {
+    t.count++;
+    bigTasks.push(t);       // big cycle → back to dormant, waits for next small-cycle trigger
+    renderBig();
+
+  } else if (t.type === 'daily') {
+    // Mark def as done today
+    const def = dailyDefs.find(d => d.id === t.dailyId);
+    if (def) { def.count++; def.lastCompleted = todayStr(); }
+    t.count = def ? def.count : t.count + 1;
+    done.unshift({ ...t, doneDate: todayStr() });
+    renderDone();
+    renderDaily();
   }
 
-  loadNext();
+  loadNext(true);
   save();
+}
+
+function triggerBigNow(id) {
+  const idx = bigTasks.findIndex(bt => bt.id === id);
+  if (idx === -1) return;
+  const bt = bigTasks.splice(idx, 1)[0];
+  pushTop(bt);
+  if (!cur) loadNext(true); else renderQ();
+  renderBig(); save();
+}
+
+function checkTriggers() {
+  const fired = [];
+  bigTasks = bigTasks.filter(bt => {
+    const every = isNaN(bt.trigEvery) || bt.trigEvery < 1 ? 20 : bt.trigEvery;
+    if (smallCount % every === 0) { fired.push(bt); return false; }
+    return true;
+  });
+  if (fired.length > 0) {
+    fired.forEach(bt => pushTop(bt));
+    renderBig();
+  }
 }
 
 function doReset() {
-  if (!currentTask) return;
-  clearInterval(ticker);
-  running = false;
-  timeLeft = currentTask.duration;
-  totalTime = currentTask.duration;
-  btnStartPause.textContent = '开始';
-  refreshTimerDisplay();
+  if (!cur) return;
+  clearInterval(ticker); running = false;
+  left = cur.duration; total = cur.duration;
+  btnSP.textContent = '开始';
+  refreshDisp();
 }
 
-function skipCurrent() {
-  if (!currentTask) return;
-  clearInterval(ticker);
-  running = false;
-  tasks.shift(); // discard
-  loadNext();
+function skipTask() {
+  // Move current task to end of queue (try again later)
+  if (!cur) return;
+  clearInterval(ticker); running = false;
+  const t = tasks.shift();
+  tasks.push(t);
+  loadNext(true); save();
+}
+
+function shelveTask() {
+  if (!cur) return;
+  clearInterval(ticker); running = false; timerStartedAt = null;
+  const t = tasks.shift();
+  shelvedTasks.push(t);
+  renderShelved();
+  loadNext(true); save();
+}
+
+function restoreShelved(taskId) {
+  const idx = shelvedTasks.findIndex(t => t.id === taskId);
+  if (idx === -1) return;
+  const t = shelvedTasks.splice(idx, 1)[0];
+  pushTop(t);
+  if (!cur) loadNext(); else renderQ();
+  renderShelved(); save();
+}
+
+function renderShelved() {
+  if (shelvedTasks.length === 0) { shelvedSec.style.display = 'none'; return; }
+  shelvedSec.style.display = 'flex';
+  shelvedList.innerHTML = shelvedTasks.map(t => {
+    const mins = Math.ceil(t.duration / 60);
+    const lp   = t.count > 0 ? `<span class="pill">×${t.count}</span>` : '';
+    const tagP = t.tag ? `<span class="pill" style="background:var(--surf3)">🏠 ${esc(t.tag)}</span>` : '';
+    return `<div class="card c-${t.type}" style="opacity:.6">
+      <div class="card-body">
+        <div class="card-name">${esc(t.name)}</div>
+        <div class="card-sub">
+          <span>${mins} 分钟</span>
+          <span class="badge b-${t.type}">${tn(t.type)}</span>
+          ${lp}${tagP}
+          <span style="color:var(--muted)">已搁置</span>
+        </div>
+      </div>
+      <button class="btn btn-muted btn-sm" onclick="restoreShelved(${t.id})">恢复</button>
+    </div>`;
+  }).join('');
+}
+
+function skipToday() {
+  // All cycle types: remove from today's queue, can restore or comes back tomorrow
+  if (!cur || cur.type === 'once') return;
+  clearInterval(ticker); running = false;
+  const t = tasks.shift();
+  if (t.type === 'daily') {
+    // Daily: mark def as skipped so daily-check doesn't re-inject
+    const def = dailyDefs.find(d => d.id === t.dailyId);
+    if (def) def.skippedToday = todayStr();
+    renderDaily();
+  }
+  skippedTasks.push({ task: t, skippedDate: todayStr() });
+  renderSkipped();
+  loadNext(true); save();
+}
+
+function restoreSkipped(taskId) {
+  const idx = skippedTasks.findIndex(s => s.task.id === taskId);
+  if (idx === -1) return;
+  const { task } = skippedTasks.splice(idx, 1)[0];
+  if (task.type === 'daily') {
+    // Clear daily skip so it won't be blocked again today
+    const def = dailyDefs.find(d => d.id === task.dailyId);
+    if (def) def.skippedToday = null;
+    renderDaily();
+  }
+  pushTop(task);
+  if (!cur) loadNext();
+  else renderQ();
+  renderSkipped();
   save();
 }
 
+function removeTask(id) {
+  if (cur && cur.id === id) { skipTask(); return; }
+  if (bigTasks.find(t => t.id === id)) {
+    bigTasks = bigTasks.filter(t => t.id !== id);
+    renderBig(); save(); return;
+  }
+  // Check if it's a daily task in queue
+  const t = tasks.find(x => x.id === id);
+  if (t && t.type === 'daily') {
+    tasks = tasks.filter(x => x.id !== id);
+    renderQ(); renderDaily(); save(); return;
+  }
+  tasks = tasks.filter(x => x.id !== id);
+  renderQ(); save();
+}
+
+function removeDailyDef(defId) {
+  dailyDefs = dailyDefs.filter(d => d.id !== defId);
+  tasks = tasks.filter(t => t.dailyId !== defId);
+  if (cur && cur.dailyId === defId) {
+    clearInterval(ticker); running = false;
+    tasks.shift();
+  }
+  renderDaily();
+  if (!cur || (cur && cur.dailyId === defId)) loadNext();
+  else renderQ();
+  save();
+}
+
+// ── Stats ──
+function fmtTime(sec) {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+function fmtSub(sec) {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return `${h > 0 ? h+'小时' : ''}${m > 0 ? m+'分钟' : ''}${h===0&&m<10 ? s+'秒' : ''}` || '0秒';
+}
+function updateStats() {
+  statToday.textContent    = fmtTime(totalToday);
+  statTodaySub.textContent = fmtSub(totalToday);
+  statTotal.textContent    = fmtTime(totalAllTime);
+  statTotalSub.textContent = fmtSub(totalAllTime);
+}
+
 // ── Render ──
-function renderAll() {
-  renderTimer();
-  renderQueue();
-  renderDone();
+function renderAll() { renderTimer(); renderQ(); renderDaily(); renderBig(); renderSkipped(); renderShelved(); renderDone(); }
+
+function renderSkipped() {
+  // Show small/big/daily tasks skipped today
+  if (skippedTasks.length === 0) { skippedSec.style.display = 'none'; return; }
+  skippedSec.style.display = 'flex';
+  skippedList.innerHTML = skippedTasks.map(({ task: t }) => {
+    const mins = Math.ceil(t.duration / 60);
+    const lp   = t.count > 0 ? `<span class="pill">×${t.count}</span>` : '';
+    return `<div class="card c-${t.type}" style="opacity:.6">
+      <div class="card-body">
+        <div class="card-name">${esc(t.name)}</div>
+        <div class="card-sub">
+          <span>${mins} 分钟</span>
+          <span class="badge b-${t.type}">${tn(t.type)}</span>
+          ${lp}
+          <span style="color:var(--warn)">今日跳过</span>
+        </div>
+      </div>
+      <button class="btn btn-muted btn-sm" onclick="restoreSkipped(${t.id})">恢复</button>
+    </div>`;
+  }).join('');
 }
 
 function renderTimer() {
-  if (!currentTask) {
-    currentInfo.style.display = 'block';
-    timerRing.style.display   = 'none';
-    timerControls.style.display = 'none';
-    timerHint.style.display   = 'none';
-    currentInfo.innerHTML     = '<span>暂无任务，在下方添加任务开始</span>';
+  if (!cur) {
+    curInfo.innerHTML = '<span>暂无任务，在下方添加任务开始</span>';
+    curInfo.style.display = 'block';
+    ring.style.display = ctrl.style.display = hint.style.display = 'none';
     return;
   }
+  prog.style.stroke = tc(cur.type);
+  btnSP.style.background = tc(cur.type);
 
-  currentInfo.style.display   = 'block';
-  timerRing.style.display     = 'block';
-  timerControls.style.display = 'flex';
-  timerHint.style.display     = 'block';
+  const loop = (cur.type === 'small' || cur.type === 'big') && cur.count > 0
+    ? `<span class="pill">${tn(cur.type)} ×${cur.count}</span>` : '';
+  const dailyCount = cur.type === 'daily' && cur.count > 0
+    ? `<span class="pill">连续 ${cur.count} 天</span>` : '';
 
-  const isRecurring = currentTask.type === 'recurring';
-  const color       = isRecurring ? 'var(--accent-recurring)' : 'var(--accent-once)';
-  progressCircle.style.stroke = color;
-  btnStartPause.style.background = color;
+  curInfo.innerHTML = `
+    <div class="cur-name" style="cursor:pointer" onclick="openEditModal(${cur.id},'queue')" title="点击修改名称/类型/时长">${esc(cur.name)}</div>
+    <div class="cur-meta">
+      <span class="badge b-${cur.type}" style="cursor:pointer" onclick="openEditModal(${cur.id},'queue')" title="点击修改">${tn(cur.type)}</span>
+      ${cur.tag ? `<span class="pill" style="background:var(--surf3)">🏠 ${esc(cur.tag)}</span>` : ''}
+      ${loop}${dailyCount}
+      <button class="edit-btn" onclick="openEditModal(${cur.id},'queue')" style="font-size:0.8rem">✏ 修改</button>
+    </div>`;
 
-  const countHtml = isRecurring && currentTask.count > 0
-    ? `<span class="loop-pill">已循环 ${currentTask.count} 次</span>` : '';
-
-  currentInfo.innerHTML = `
-    <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
-      <div class="current-task-name">${esc(currentTask.name)}</div>
-      <div class="task-meta-row">
-        <span class="badge ${isRecurring ? 'badge-recurring' : 'badge-once'}">
-          ${isRecurring ? '循环' : '一次性'}
-        </span>
-        ${countHtml}
-      </div>
-    </div>
-  `;
-
-  btnStartPause.textContent = running ? '暂停' : '开始';
-  refreshTimerDisplay();
+  curInfo.style.display = 'block';
+  ring.style.display = 'block';
+  ctrl.style.display = 'flex';
+  hint.style.display = 'block';
+  btnSkipToday.style.display = cur.type !== 'once' ? 'inline-block' : 'none';
+  btnShelve.style.display = 'inline-block';
+  btnSP.textContent = running ? '暂停' : '开始';
+  refreshDisp();
 }
 
-function refreshTimerDisplay() {
-  const m = String(Math.floor(timeLeft / 60)).padStart(2, '0');
-  const s = String(timeLeft % 60).padStart(2, '0');
-  timerDisplay.textContent = `${m}:${s}`;
-
-  const ratio  = totalTime > 0 ? timeLeft / totalTime : 0;
-  const offset = CIRCUMFERENCE * (1 - ratio);
-  progressCircle.style.strokeDashoffset = offset;
-
-  // Warn color when ≤ 10%
-  if (ratio <= 0.1 && currentTask) {
-    progressCircle.style.stroke = 'var(--warn)';
-  } else if (currentTask) {
-    progressCircle.style.stroke = currentTask.type === 'recurring'
-      ? 'var(--accent-recurring)' : 'var(--accent-once)';
+function refreshDisp() {
+  if (overSecs > 0) {
+    const m = String(Math.floor(overSecs / 60)).padStart(2, '0');
+    const s = String(overSecs % 60).padStart(2, '0');
+    disp.textContent = `+${m}:${s}`;
+    timerSub.textContent = '已超时';
+    prog.style.strokeDashoffset = '0';
+    prog.style.stroke = 'var(--warn)';
+  } else {
+    const m = String(Math.floor(left / 60)).padStart(2, '0');
+    const s = String(left % 60).padStart(2, '0');
+    disp.textContent = `${m}:${s}`;
+    timerSub.textContent = '剩余时间';
+    const ratio = total > 0 ? left / total : 0;
+    prog.style.strokeDashoffset = CIRC * (1 - ratio);
+    prog.style.stroke = ratio <= 0.1 ? 'var(--warn)' : tc(cur?.type);
   }
 }
 
-function renderQueue() {
-  const upcoming = tasks.slice(1); // skip current (tasks[0])
-  const total    = tasks.length;
-
-  queueCountLbl.textContent = total > 0 ? `共 ${total} 个` : '';
-
-  if (upcoming.length === 0) {
-    queueList.innerHTML = `<div class="empty-msg">队列为空</div>`;
-    return;
-  }
-
-  queueList.innerHTML = upcoming.map((t, i) => {
-    const isR    = t.type === 'recurring';
+function renderQ() {
+  const up = tasks.slice(1);
+  qCnt.textContent = tasks.length > 0 ? `共 ${tasks.length} 个` : '';
+  if (up.length === 0) { qList.innerHTML = `<div class="empty">队列为空</div>`; return; }
+  qList.innerHTML = up.map((t, i) => {
     const mins   = Math.ceil(t.duration / 60);
-    const pill   = isR && t.count > 0 ? `<span class="loop-pill">×${t.count}</span>` : '';
-    return `
-      <div class="task-card type-${t.type}">
-        <div style="min-width:20px;text-align:center;font-size:.8rem;color:var(--text-muted);font-weight:700">${i + 2}</div>
-        <div class="card-body">
-          <div class="card-name">${esc(t.name)}</div>
-          <div class="card-sub">
-            <span>${mins} 分钟</span>
-            <span>${isR ? '循环' : '一次性'}</span>
-            ${pill}
-          </div>
+    const lp     = (t.type === 'small' || t.type === 'big') && t.count > 0 ? `<span class="pill">×${t.count}</span>` : '';
+    const topTag = i === 0 ? `<span class="top-tag">Next</span>` : '';
+    return `<div class="card c-${t.type}${i === 0 ? ' slide-in' : ''}">
+      <div style="min-width:20px;text-align:center;font-size:.75rem;color:var(--muted);font-weight:700">${i + 2}</div>
+      <div class="card-body">
+        <div class="card-name">${esc(t.name)}</div>
+        <div class="card-sub">
+          <span>${mins} 分钟 <button class="edit-btn" onclick="openEditModal(${t.id},'queue')">✏</button></span>
+          <span class="badge b-${t.type}" style="cursor:pointer" onclick="openEditModal(${t.id},'queue')" title="点击修改类型/时长">${tn(t.type)}</span>
+          ${t.tag ? `<span class="pill" style="background:var(--surf3)">🏠 ${esc(t.tag)}</span>` : ''}
+          ${lp}${topTag}
         </div>
-        <button class="remove-btn" onclick="removeTask(${t.id})" title="删除">✕</button>
-      </div>`;
+      </div>
+      <button class="rm-btn" onclick="removeTask(${t.id})">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function renderDaily() {
+  if (dailyDefs.length === 0) { dailySec.style.display = 'none'; return; }
+  dailySec.style.display = 'flex';
+  const today = todayStr();
+  dailyList.innerHTML = dailyDefs.map(def => {
+    const isDone    = def.lastCompleted === today;
+    const isSkipped = def.skippedToday === today;
+    const inQueue   = tasks.some(t => t.dailyId === def.id);
+    const mins      = Math.ceil(def.duration / 60);
+    const dotClass  = isDone ? 'dot-done' : isSkipped ? 'dot-pending' : inQueue ? 'dot-queue' : 'dot-pending';
+    const statusTxt = isDone ? '今日已完成 ✓' : isSkipped ? '今日已跳过' : inQueue ? '队列中' : '等待';
+    const doneClass = (isDone || isSkipped) ? ' day-done' : '';
+    const streak    = def.count > 0 ? `<span class="pill">共 ${def.count} 次</span>` : '';
+    return `<div class="daily-card${doneClass}">
+      <div class="daily-status-dot ${dotClass}"></div>
+      <div class="card-body">
+        <div class="card-name">${esc(def.name)}</div>
+        <div class="card-sub">
+          <span>${mins} 分钟 <button class="edit-btn" onclick="openEditModal(${def.id},'daily')">✏</button></span>
+          <span style="color:${isDone ? 'var(--small)' : inQueue ? 'var(--daily)' : 'var(--muted)'}">${statusTxt}</span>
+          ${streak}
+        </div>
+      </div>
+      <button class="rm-btn" onclick="removeDailyDef(${def.id})" title="删除">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function renderBig() {
+  if (bigTasks.length === 0) { bigSec.style.display = 'none'; return; }
+  bigSec.style.display = 'flex';
+  bigList.innerHTML = bigTasks.map(bt => {
+    const mins     = Math.ceil(bt.duration / 60);
+    const every    = isNaN(bt.trigEvery) || bt.trigEvery < 1 ? 20 : bt.trigEvery;
+    const progress = smallCount % every;
+    const pct      = Math.round((progress / every) * 100);
+    const remain   = every - progress;
+    return `<div class="card c-big">
+      <div class="card-body">
+        <div class="card-name">${esc(bt.name)}</div>
+        <div class="card-sub">
+          <span>${mins} 分钟 <button class="edit-btn" onclick="openEditModal(${bt.id},'big')">✏</button></span>
+          <span class="badge b-big">大循环</span>
+          <span>小循环再完成 ${remain} 次触发（每 ${every} 次）</span>
+        </div>
+        <div class="trig-bar"><div class="trig-fill" style="width:${pct}%"></div></div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn btn-muted btn-sm" onclick="triggerBigNow(${bt.id})">立即开始</button>
+        <button class="rm-btn" onclick="removeTask(${bt.id})">✕</button>
+      </div>
+    </div>`;
   }).join('');
 }
 
 function renderDone() {
-  if (doneTasks.length === 0) {
-    completedSection.style.display = 'none';
-    return;
-  }
-  completedSection.style.display = 'flex';
-  completedList.innerHTML = doneTasks.map(t => {
-    const mins = Math.ceil(t.duration / 60);
-    return `
-      <div class="task-card type-once done">
-        <div class="card-body">
-          <div class="card-name">${esc(t.name)}</div>
-          <div class="card-sub"><span>${mins} 分钟</span><span>已完成</span></div>
+  if (done.length === 0) { doneSec.style.display = 'none'; return; }
+  doneSec.style.display = 'flex';
+  doneList.innerHTML = done.map(t => {
+    const isDaily = t.type === 'daily';
+    const tagPill = t.tag ? `<span class="pill" style="background:var(--surf3)">🏠 ${esc(t.tag)}</span>` : '';
+    return `<div class="card c-${t.type} c-done">
+      <div class="card-body">
+        <div class="card-name">${esc(t.name)}</div>
+        <div class="card-sub">
+          <span>${Math.ceil(t.duration/60)} 分钟 <button class="edit-btn" onclick="openEditModal(${t.id},'done')">✏</button></span>
+          <span class="badge b-${t.type}">${tn(t.type)}</span>
+          ${tagPill}
         </div>
-        <span class="check-icon">✓</span>
-      </div>`;
+      </div>
+      <span class="${isDaily ? 'done-daily' : 'check'}">✓</span>
+    </div>`;
   }).join('');
 }
 
-// ── Remove from queue ──
-function removeTask(id) {
-  if (currentTask && currentTask.id === id) {
-    skipCurrent();
-    return;
-  }
-  tasks = tasks.filter(t => t.id !== id);
-  renderQueue();
-  save();
-}
-
-// ── Buttons ──
-btnStartPause.addEventListener('click', startPause);
-btnComplete.addEventListener('click', doComplete);
+// ── Events ──
+btnSP.addEventListener('click', startPause);
+btnDone.addEventListener('click', doComplete);
 btnReset.addEventListener('click', doReset);
-btnClearDone.addEventListener('click', () => { doneTasks = []; renderDone(); save(); });
+btnSkip.addEventListener('click', skipTask);
+btnSkipToday.addEventListener('click', skipToday);
+btnShelve.addEventListener('click', shelveTask);
+btnClear.addEventListener('click', () => { done = []; renderDone(); save(); });
 
-// ── Keyboard ──
 document.addEventListener('keydown', e => {
-  if (e.target === inputName || e.target === inputDuration) return;
-  if (e.code === 'Space')  { e.preventDefault(); startPause(); }
-  if (e.code === 'Enter')  { e.preventDefault(); doComplete(); }
-  if (e.code === 'Delete' || e.code === 'Backspace') { e.preventDefault(); skipCurrent(); }
+  const tag = e.target.tagName;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  if (e.code === 'Space')                             { e.preventDefault(); startPause(); }
+  if (e.code === 'Enter')                             { e.preventDefault(); doComplete(); }
+  if (e.code === 'Delete' || e.code === 'Backspace') { e.preventDefault(); skipTask(); }
 });
+
+// ── Helpers ──
+function todayStr() {
+  return new Date().toLocaleDateString('en-CA'); // "YYYY-MM-DD"
+}
+function tc(type) {
+  return { once:'var(--once)', small:'var(--small)', big:'var(--big)', daily:'var(--daily)' }[type] || 'var(--once)';
+}
+function tn(type) {
+  return { once:'一次性', small:'小循环', big:'大循环', daily:'Daily' }[type] || type;
+}
+function esc(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 
 // ── Persist ──
 function save() {
   try {
-    localStorage.setItem('tt_tasks',   JSON.stringify(tasks));
-    localStorage.setItem('tt_done',    JSON.stringify(doneTasks));
-    localStorage.setItem('tt_uid',     uid);
-  } catch (_) {}
+    // Stable keys — will never change prefix again
+    localStorage.setItem('tt_tasks',     JSON.stringify(tasks));
+    localStorage.setItem('tt_big',       JSON.stringify(bigTasks));
+    localStorage.setItem('tt_daily',     JSON.stringify(dailyDefs));
+    localStorage.setItem('tt_done',      JSON.stringify(done));
+    localStorage.setItem('tt_uid',       uid);
+    localStorage.setItem('tt_left',      left);
+    localStorage.setItem('tt_total',     total);
+    localStorage.setItem('tt_curId',     cur ? cur.id : -1);
+    localStorage.setItem('tt_allTime',   totalAllTime);
+    localStorage.setItem('tt_today',     totalToday);
+    localStorage.setItem('tt_todayDate', todayStr());
+    localStorage.setItem('tt_skipped',   JSON.stringify(skippedTasks));
+    localStorage.setItem('tt_shelved',   JSON.stringify(shelvedTasks));
+    localStorage.setItem('tt_homeTasks',  JSON.stringify(homeTasks));
+    localStorage.setItem('tt_workMode',   workMode ? '1' : '0');
+    localStorage.setItem('tt_smallCount', smallCount);
+  } catch(_) {}
 }
-
 function load() {
   try {
-    const t = localStorage.getItem('tt_tasks');
-    const d = localStorage.getItem('tt_done');
-    const u = localStorage.getItem('tt_uid');
-    if (t) tasks     = JSON.parse(t);
-    if (d) doneTasks = JSON.parse(d);
-    if (u) uid       = parseInt(u) || 1;
-  } catch (_) {}
+    // Migrate from any previous key prefix (tt2_, tt3_, tt4_, tt5_)
+    const pick = (...keys) => {
+      for (const k of keys) {
+        const v = localStorage.getItem(k);
+        if (v) return v;
+      }
+      return null;
+    };
+    const t  = pick('tt_tasks',    'tt5_tasks',  'tt4_tasks',  'tt3_tasks',  'tt2_tasks');
+    const b  = pick('tt_big',      'tt5_big',    'tt4_big',    'tt3_big',    'tt2_big');
+    const dy = pick('tt_daily',    'tt5_daily',  'tt4_daily',  'tt3_daily');
+    const d  = pick('tt_done',     'tt5_done',   'tt4_done',   'tt3_done',   'tt2_done');
+    const u  = pick('tt_uid',      'tt5_uid',    'tt4_uid',    'tt3_uid',    'tt2_uid');
+    const l  = pick('tt_left',     'tt5_left');
+    const tot= pick('tt_total',    'tt5_total');
+    const ci = pick('tt_curId',    'tt5_curId');
+    const at = pick('tt_allTime',  'tt5_allTime');
+    const td = pick('tt_today',    'tt5_today');
+    const tdd= pick('tt_todayDate','tt5_todayDate');
+    if (t)  tasks     = JSON.parse(t);
+    if (b)  bigTasks  = JSON.parse(b);
+    if (dy) dailyDefs = JSON.parse(dy);
+    if (d)  done      = JSON.parse(d);
+    if (u)  uid       = parseInt(u)  || 1;
+    if (at) totalAllTime = parseInt(at) || 0;
+    if (td && tdd === todayStr()) totalToday = parseInt(td) || 0;
+    const sk = pick('tt_skipped',  'tt5_skipped');
+    if (sk && tdd === todayStr()) skippedTasks = JSON.parse(sk);
+    const sh = localStorage.getItem('tt_shelved');
+    if (sh) shelvedTasks = JSON.parse(sh);
+    if (l)  _savedLeft  = parseInt(l);
+    if (tot)_savedTotal = parseInt(tot);
+    if (ci) _savedCurId = parseInt(ci);
+    const wm = localStorage.getItem('tt_workMode');
+    if (wm !== null) workMode = wm === '1';
+    const ht = localStorage.getItem('tt_homeTasks');
+    if (ht) homeTasks = JSON.parse(ht);
+    const sc = localStorage.getItem('tt_smallCount');
+    if (sc) smallCount = parseInt(sc) || 0;
+  } catch(_) {}
 }
 
-// ── Helpers ──
-function esc(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+// ── Daily Reset Check (every minute) ──
+setInterval(() => {
+  const today = todayStr();
+  if (today !== lastDay) {
+    lastDay = today;
+    totalToday = 0;
+    // Restore all skipped cycle tasks back to queue at midnight
+    skippedTasks.forEach(({ task: t }) => {
+      if (t.type !== 'daily') pushTop(t); // daily tasks re-injected via checkDailyTasks
+    });
+    skippedTasks = [];
+    done = done.filter(t => t.type !== 'daily');
+    updateStats();
+    renderSkipped();
+    renderDone();
+    if (!cur) loadNext();
+    else renderQ();
+  }
+  checkDailyTasks();
+}, 60 * 1000);
+
+// ── Edit Modal ──
+let editingId  = null;
+let editingSrc = null;
+let modalType  = null;
+let modalTag   = '';
+
+function findTask(id, src) {
+  if (src === 'queue') return tasks.find(t => t.id === id);
+  if (src === 'big')   return bigTasks.find(t => t.id === id);
+  if (src === 'daily') return dailyDefs.find(d => d.id === id);
+  if (src === 'done')  return done.find(t => t.id === id);
+  return null;
+}
+
+function setModalType(type) {
+  modalType = type;
+  document.querySelectorAll('#modalTypeToggle .type-btn').forEach(x => {
+    x.className = 'type-btn' + (x.dataset.t === type ? ` on on-${type}` : '');
+  });
+  const trigRow = document.getElementById('modalTrigRow');
+  if (trigRow) trigRow.style.display = type === 'big' ? 'flex' : 'none';
+}
+function setModalTag(tag) {
+  modalTag = tag;
+  document.querySelectorAll('#modalTagToggle .type-btn').forEach(x => {
+    x.className = 'type-btn' + (x.dataset.tag === tag ? ' on on-once' : '');
+  });
+}
+
+function openEditModal(id, src) {
+  const task = findTask(id, src);
+  if (!task) return;
+  editingId  = id;
+  editingSrc = src;
+  const nameInp = document.getElementById('modalName');
+  nameInp.value = task.name;
+  const inp = document.getElementById('modalInput');
+  inp.value = Math.ceil(task.duration / 60);
+  // Show type selector for queue and done tasks
+  const typeRow = document.getElementById('modalTypeRow');
+  typeRow.style.display = (src === 'queue' || src === 'done') ? 'flex' : 'none';
+  setModalType(task.type);
+  setModalTag(task.tag || '');
+  const trigN = document.getElementById('modalTrigN');
+  if (trigN) trigN.value = isNaN(task.trigEvery) ? 20 : (task.trigEvery || 20);
+  document.getElementById('editModal').style.display = 'flex';
+  setTimeout(() => { nameInp.focus(); nameInp.select(); }, 50);
+}
+
+function saveModal() {
+  const mins = Math.max(1, parseInt(document.getElementById('modalInput').value) || 1);
+  const secs = mins * 60;
+  const newName = document.getElementById('modalName').value.trim();
+  const task = findTask(editingId, editingSrc);
+
+  if (task) {
+    if (newName) task.name = newName;
+    task.duration = secs;
+    // Save trigEvery for big cycle tasks
+    if (task.type === 'big' || modalType === 'big') {
+      const trigN = document.getElementById('modalTrigN');
+      if (trigN) task.trigEvery = Math.max(1, parseInt(trigN.value) || 20);
+    }
+    // Apply tag change
+    if (editingSrc === 'queue') {
+      const oldTag = task.tag || '';
+      task.tag = modalTag || undefined;
+      if (!task.tag) delete task.tag;
+      // If tag changed to '家' while in work mode, pull out of queue
+      if (modalTag === '家' && workMode && oldTag !== '家') {
+        tasks = tasks.filter(t => t.id !== task.id);
+        homeTasks.push(task);
+        if (cur && cur.id === task.id) { clearInterval(ticker); running = false; overSecs = 0; cur = null; loadNext(); }
+        closeModal(); renderAll(); save(); return;
+      }
+      // If tag changed FROM '家' while in work mode, nothing to do (task stays in queue)
+    }
+    const oldType = task.type;
+    const newType = (editingSrc === 'queue' || editingSrc === 'done') ? modalType : oldType;
+    // For done tasks: update fields, then restore to queue if changed to a cycle type
+    if (editingSrc === 'done') {
+      task.type = newType;
+      if (newType === 'small' || newType === 'big') {
+        done = done.filter(t => t.id !== task.id);
+        delete task.doneDate;
+        task.count = task.count || 0;
+        pushTop(task);
+        if (!cur) loadNext(); else renderQ();
+      }
+      closeModal(); renderAll(); save(); return;
+    }
+
+    // ── Type change migration ──
+    if (newType !== oldType) {
+      // FROM daily: remove the daily def, detach dailyId
+      if (oldType === 'daily') {
+        dailyDefs = dailyDefs.filter(d => d.id !== task.dailyId);
+        delete task.dailyId;
+        renderDaily();
+      }
+      // TO daily: create a new daily def and link it
+      if (newType === 'daily') {
+        const def = {
+          id: uid++, name: task.name, duration: secs, type: 'daily',
+          count: task.count || 0, lastCompleted: null
+        };
+        dailyDefs.push(def);
+        task.dailyId = def.id;
+        renderDaily();
+      }
+      task.type = newType;
+    }
+
+    // Sync name+duration to daily def's active queue instance (and vice versa)
+    if (oldType === 'daily' && newType === 'daily') {
+      if (editingSrc === 'daily') {
+        const qt = tasks.find(t => t.dailyId === editingId);
+        if (qt) { qt.duration = secs; if (newName) qt.name = newName; }
+      } else {
+        const def = dailyDefs.find(d => d.id === task.dailyId);
+        if (def) { def.duration = secs; if (newName) def.name = newName; }
+      }
+    }
+
+    // Adjust live countdown if editing current task
+    if (cur && cur.id === editingId) {
+      const elapsed = total - left;
+      total = secs;
+      left  = Math.max(0, secs - elapsed);
+      refreshDisp();
+    }
+  }
+
+  closeModal();
+  renderAll();
+  save();
+}
+
+function closeModal() {
+  document.getElementById('editModal').style.display = 'none';
+  editingId = editingSrc = modalType = null;
+  modalTag = '';
 }
 
 // ── Init ──
 load();
+renderContext();
+checkDailyTasks();
 if (tasks.length > 0) loadNext();
-else renderAll();
+else { renderAll(); updateStats(); }
 </script>
+
+<!-- Edit Time Modal -->
+<div id="editModal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box">
+    <div class="modal-title">修改任务</div>
+    <div class="fg">
+      <label class="fl">任务名称</label>
+      <input type="text" id="modalName" maxlength="60"
+        onkeydown="if(event.key==='Escape')closeModal()">
+    </div>
+    <div class="fg" id="modalTypeRow" style="display:none">
+      <label class="fl">类型</label>
+      <div class="type-toggle" id="modalTypeToggle">
+        <button class="type-btn" data-t="once"  onclick="setModalType('once')">一次性</button>
+        <button class="type-btn" data-t="small" onclick="setModalType('small')">小循环</button>
+        <button class="type-btn" data-t="big"   onclick="setModalType('big')">大循环</button>
+        <button class="type-btn" data-t="daily" onclick="setModalType('daily')">Daily</button>
+      </div>
+    </div>
+    <div class="fg">
+      <label class="fl">标签</label>
+      <div class="type-toggle" id="modalTagToggle">
+        <button class="type-btn" data-tag="" onclick="setModalTag('')">无</button>
+        <button class="type-btn" data-tag="家" onclick="setModalTag('家')">🏠 家</button>
+      </div>
+    </div>
+    <div class="fg" id="modalTrigRow" style="display:none">
+      <label class="fl">每 N 次小循环触发</label>
+      <input type="number" id="modalTrigN" min="1" max="999"
+        onkeydown="if(event.key==='Escape')closeModal()">
+    </div>
+    <div class="fg">
+      <label class="fl">时长（分钟）</label>
+      <input type="number" id="modalInput" min="1" max="999"
+        onkeydown="if(event.key==='Enter')saveModal();if(event.key==='Escape')closeModal()">
+    </div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal()">取消</button>
+      <button class="btn-save"   onclick="saveModal()">保存</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>

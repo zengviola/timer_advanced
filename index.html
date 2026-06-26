@@ -1096,6 +1096,7 @@ function renderTimer() {
   const dailyCount = cur.type === 'daily' && cur.count > 0
     ? `<span class="pill">连续 ${cur.count} 天</span>` : '';
 
+  const waterHint = cur.name.includes('喝水') ? `<div style="font-size:0.78rem;color:var(--daily);margin-top:6px;">💊 饭后温水服用</div>` : '';
   curInfo.innerHTML = `
     <div class="cur-name" style="cursor:pointer" onclick="openEditModal(${cur.id},'queue')" title="点击修改名称/类型/时长">${esc(cur.name)}</div>
     <div class="cur-meta">
@@ -1103,7 +1104,8 @@ function renderTimer() {
       ${cur.tag ? `<span class="pill" style="background:var(--surf3)">🏠 ${esc(cur.tag)}</span>` : ''}
       ${loop}${dailyCount}
       <button class="edit-btn" onclick="openEditModal(${cur.id},'queue')" style="font-size:0.8rem">✏ 修改</button>
-    </div>`;
+    </div>
+    ${waterHint}`;
 
   curInfo.style.display = 'block';
   ring.style.display = 'block';

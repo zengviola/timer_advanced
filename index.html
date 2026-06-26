@@ -864,6 +864,9 @@ function doComplete() {
 
   } else if (t.type === 'big') {
     t.count++;
+    const _tdb = todayStr();
+    if (t.dayCountDate !== _tdb) { t.dayCount = 0; t.dayCountDate = _tdb; }
+    t.dayCount = (t.dayCount || 0) + 1;
     bigTasks.push(t);       // big cycle → back to dormant, waits for next small-cycle trigger
     renderBig();
 

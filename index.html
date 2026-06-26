@@ -1566,7 +1566,7 @@ function saveCloudToken() {
   cloudToken = inp;
   localStorage.setItem('tt_cloud_token', cloudToken);
   cloudCfg.style.display = 'none';
-  pushToCloud();
+  loadFromCloud();  // pull first; creates new gist if none found
 }
 
 function clearCloudToken() {
@@ -1649,7 +1649,11 @@ async function loadFromCloud() {
     if (!res.ok) throw new Error(res.status);
     const gist = await res.json();
     const content = gist.files?.['timer_data.json']?.content;
-    if (content) applyCloudPayload(content);
+    if (content) {
+      applyCloudPayload(content);
+    } else {
+      console.warn('Gist found but timer_data.json missing', gist.files);
+    }
     updateGistLink();
     setChip('ok', '☁ 已同步');
   } catch(e) {

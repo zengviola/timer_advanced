@@ -1612,10 +1612,37 @@ function applyCloudPayload(raw) {
   } catch(e) { console.error('Cloud apply failed', e); }
 }
 
+async function findGistId() {
+  // Search all user gists for ours by description
+  let page = 1;
+  while (page <= 5) {
+    const res = await fetch(`https://api.github.com/gists?per_page=100&page=${page}`, {
+      headers: { Authorization: `token ${cloudToken}`, Accept: 'application/vnd.github+json' }
+    });
+    if (!res.ok) throw new Error(res.status);
+    const list = await res.json();
+    if (!list.length) break;
+    const found = list.find(g => g.description === 'Timer Advanced — task data');
+    if (found) return found.id;
+    if (list.length < 100) break;
+    page++;
+  }
+  return null;
+}
+
 async function loadFromCloud() {
-  if (!cloudToken || !cloudGistId) return;
+  if (!cloudToken) return;
   setChip('syncing', '↻ 同步中…');
   try {
+    // Always search for the gist by name (works across devices/domains)
+    const id = await findGistId();
+    if (!id) {
+      // No gist yet — create one with current data
+      await pushToCloud();
+      return;
+    }
+    cloudGistId = id;
+    localStorage.setItem('tt_cloud_gist', cloudGistId);
     const res = await fetch(`https://api.github.com/gists/${cloudGistId}`, {
       headers: { Authorization: `token ${cloudToken}`, Accept: 'application/vnd.github+json' }
     });
@@ -1623,6 +1650,7 @@ async function loadFromCloud() {
     const gist = await res.json();
     const content = gist.files?.['timer_data.json']?.content;
     if (content) applyCloudPayload(content);
+    updateGistLink();
     setChip('ok', '☁ 已同步');
   } catch(e) {
     console.error('Cloud load error', e);

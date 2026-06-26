@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>任务计时器</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --surface2: #334155;
+      --surface3: #475569;
+      --accent-once: #3b82f6;
+      --accent-recurring: #10b981;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 28px 16px 48px;
+    }
+
+    .app {
+      width: 100%;
+      max-width: 500px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .app-title {
+      font-size: 1.4rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      text-align: center;
+    }
+
+    /* ── Timer Section ── */
+    .timer-section {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 28px 24px 22px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+    }
+
+    .current-task-name {
+      font-size: 1.15rem;
+      font-weight: 700;
+      text-align: center;
+      line-height: 1.3;
+    }
+
+    .task-meta-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 999px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .badge-once     { background: rgba(59,130,246,.18); color: var(--accent-once); }
+    .badge-recurring{ background: rgba(16,185,129,.18); color: var(--accent-recurring); }
+
+    .loop-count {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    /* SVG Ring */
+    .timer-ring {
+      position: relative;
+      width: 190px;
+      height: 190px;
+    }
+
+    .timer-ring svg { transform: rotate(-90deg); }
+
+    .bg-circle {
+      fill: none;
+      stroke: var(--surface2);
+      stroke-width: 9;
+    }
+
+    .progress-circle {
+      fill: none;
+      stroke-width: 9;
+      stroke-linecap: round;
+      transition: stroke-dashoffset 1s linear, stroke 0.4s;
+    }
+
+    .timer-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+    }
+
+    .timer-time {
+      font-size: 2.8rem;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.03em;
+      line-height: 1;
+    }
+
+    .timer-label {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    /* Controls */
+    .timer-controls {
+      display: flex;
+      gap: 10px;
+    }
+
+    .btn {
+      border: none;
+      border-radius: 9px;
+      padding: 10px 22px;
+      font-size: 0.88rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity .15s, transform .1s, background .2s;
+      font-family: inherit;
+    }
+    .btn:hover:not(:disabled) { opacity: .85; }
+    .btn:active:not(:disabled) { transform: scale(.96); }
+    .btn:disabled { opacity: .35; cursor: not-allowed; }
+    .btn-sm { padding: 6px 13px; font-size: 0.78rem; }
+
+    .btn-start    { background: var(--accent-once);      color: #fff; min-width: 80px; }
+    .btn-complete { background: var(--accent-recurring);  color: #fff; }
+    .btn-reset    { background: var(--surface2);          color: var(--text); }
+    .btn-danger   { background: var(--danger);            color: #fff; }
+    .btn-muted    { background: var(--surface2);          color: var(--text-muted); }
+
+    .no-task-msg {
+      color: var(--text-muted);
+      text-align: center;
+      font-size: 0.9rem;
+      padding: 10px 0;
+    }
+
+    .shortcut-hint {
+      font-size: 0.72rem;
+      color: var(--surface3);
+      letter-spacing: 0.02em;
+    }
+
+    /* ── Section ── */
+    .section { display: flex; flex-direction: column; gap: 10px; }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .section-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+    }
+
+    .empty-msg {
+      text-align: center;
+      color: var(--surface3);
+      font-size: 0.85rem;
+      padding: 14px;
+      background: var(--surface);
+      border-radius: 10px;
+    }
+
+    /* ── Task Cards ── */
+    .task-card {
+      background: var(--surface);
+      border-radius: 10px;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-left: 3px solid transparent;
+    }
+    .task-card.type-once      { border-left-color: var(--accent-once); }
+    .task-card.type-recurring { border-left-color: var(--accent-recurring); }
+    .task-card.done           { opacity: .5; }
+
+    .card-body { flex: 1; min-width: 0; }
+
+    .card-name {
+      font-size: 0.92rem;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .done .card-name { text-decoration: line-through; }
+
+    .card-sub {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-top: 3px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .loop-pill {
+      background: rgba(16,185,129,.18);
+      color: var(--accent-recurring);
+      border-radius: 999px;
+      padding: 1px 8px;
+      font-weight: 700;
+      font-size: 0.7rem;
+    }
+
+    .check-icon { font-size: 1.1rem; color: var(--accent-recurring); }
+    .remove-btn {
+      border: none;
+      background: none;
+      color: var(--surface3);
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 4px 6px;
+      border-radius: 6px;
+      transition: color .15s, background .15s;
+    }
+    .remove-btn:hover { color: var(--danger); background: rgba(239,68,68,.1); }
+
+    /* ── Add Form ── */
+    .add-form {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .form-row { display: flex; gap: 10px; }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      flex: 1;
+    }
+
+    .form-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    input[type=text], input[type=number] {
+      background: var(--surface2);
+      border: 1.5px solid transparent;
+      border-radius: 8px;
+      padding: 9px 12px;
+      color: var(--text);
+      font-size: 0.9rem;
+      outline: none;
+      font-family: inherit;
+      width: 100%;
+      transition: border-color .15s;
+    }
+    input:focus { border-color: var(--accent-once); }
+
+    .type-toggle {
+      display: flex;
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--surface2);
+    }
+
+    .type-btn {
+      flex: 1;
+      border: none;
+      padding: 9px 8px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      background: transparent;
+      color: var(--text-muted);
+      transition: background .2s, color .2s;
+    }
+    .type-btn.active-once      { background: var(--accent-once);      color: #fff; border-radius: 8px; }
+    .type-btn.active-recurring { background: var(--accent-recurring); color: #fff; border-radius: 8px; }
+
+    .btn-add-task {
+      background: var(--accent-once);
+      color: #fff;
+      border: none;
+      border-radius: 9px;
+      padding: 11px;
+      font-size: 0.92rem;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      transition: opacity .15s, transform .1s;
+    }
+    .btn-add-task:hover { opacity: .88; }
+    .btn-add-task:active { transform: scale(.98); }
+
+    /* ── Alarm flash ── */
+    @keyframes alarm-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,.4); }
+      50%       { box-shadow: 0 0 0 14px rgba(245,158,11,0); }
+    }
+    .timer-section.alarm { animation: alarm-pulse 0.8s 3; }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <div class="app-title">⏱ 任务计时器</div>
+
+  <!-- Timer -->
+  <div class="timer-section" id="timerSection">
+
+    <div id="currentInfo" class="no-task-msg">暂无任务，在下方添加任务开始</div>
+
+    <div class="timer-ring" id="timerRing" style="display:none">
+      <svg width="190" height="190" viewBox="0 0 190 190">
+        <circle class="bg-circle" cx="95" cy="95" r="86"/>
+        <circle class="progress-circle" id="progressCircle"
+          cx="95" cy="95" r="86"
+          stroke-dasharray="540.35"
+          stroke-dashoffset="0"
+          stroke="var(--accent-once)"/>
+      </svg>
+      <div class="timer-center">
+        <div class="timer-time" id="timerDisplay">05:00</div>
+        <div class="timer-label" id="timerLabel">剩余时间</div>
+      </div>
+    </div>
+
+    <div class="timer-controls" id="timerControls" style="display:none">
+      <button class="btn btn-start"    id="btnStartPause">开始</button>
+      <button class="btn btn-complete" id="btnComplete">完成 ✓</button>
+      <button class="btn btn-reset"    id="btnReset">重置</button>
+    </div>
+
+    <div class="shortcut-hint" id="timerHint" style="display:none">
+      空格 暂停/继续 · Enter 完成 · Delete 跳过
+    </div>
+
+  </div>
+
+  <!-- Queue -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-label">待办队列</span>
+      <span id="queueCountLabel" style="font-size:.78rem;color:var(--text-muted)"></span>
+    </div>
+    <div id="queueList"></div>
+  </div>
+
+  <!-- Completed -->
+  <div class="section" id="completedSection" style="display:none">
+    <div class="section-header">
+      <span class="section-label">已完成</span>
+      <button class="btn btn-muted btn-sm" id="btnClearDone">清除</button>
+    </div>
+    <div id="completedList"></div>
+  </div>
+
+  <!-- Add Form -->
+  <div class="add-form">
+    <div class="section-label">添加任务</div>
+
+    <div class="form-group">
+      <label class="form-label" for="inputName">任务名称</label>
+      <input type="text" id="inputName" placeholder="例：阅读、运动、冥想…" maxlength="60" autocomplete="off">
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label" for="inputDuration">时长（分钟）</label>
+        <input type="number" id="inputDuration" value="5" min="1" max="999">
+      </div>
+      <div class="form-group">
+        <label class="form-label">类型</label>
+        <div class="type-toggle">
+          <button class="type-btn active-once"  id="btnTypeOnce"      data-type="once">一次性</button>
+          <button class="type-btn"              id="btnTypeRecurring" data-type="recurring">循环</button>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn-add-task" id="btnAddTask">＋ 添加到队列</button>
+  </div>
+
+</div>
+
+<script>
+// ── Constants ──
+const CIRCUMFERENCE = 2 * Math.PI * 86; // ~540.35
+
+// ── State ──
+let tasks        = [];   // all pending tasks; tasks[0] is always current
+let doneTasks    = [];   // one-time completed
+let currentTask  = null;
+let timeLeft     = 0;
+let totalTime    = 0;
+let running      = false;
+let ticker       = null;
+let selectedType = 'once';
+let uid          = 1;
+
+// ── DOM ──
+const timerSection   = document.getElementById('timerSection');
+const currentInfo    = document.getElementById('currentInfo');
+const timerRing      = document.getElementById('timerRing');
+const timerControls  = document.getElementById('timerControls');
+const timerHint      = document.getElementById('timerHint');
+const timerDisplay   = document.getElementById('timerDisplay');
+const timerLabel     = document.getElementById('timerLabel');
+const progressCircle = document.getElementById('progressCircle');
+const btnStartPause  = document.getElementById('btnStartPause');
+const btnComplete    = document.getElementById('btnComplete');
+const btnReset       = document.getElementById('btnReset');
+const queueList      = document.getElementById('queueList');
+const queueCountLbl  = document.getElementById('queueCountLabel');
+const completedSection = document.getElementById('completedSection');
+const completedList  = document.getElementById('completedList');
+const btnClearDone   = document.getElementById('btnClearDone');
+const inputName      = document.getElementById('inputName');
+const inputDuration  = document.getElementById('inputDuration');
+const btnAddTask     = document.getElementById('btnAddTask');
+
+// ── Type Toggle ──
+document.querySelectorAll('.type-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    selectedType = btn.dataset.type;
+    document.getElementById('btnTypeOnce').className =
+      'type-btn' + (selectedType === 'once' ? ' active-once' : '');
+    document.getElementById('btnTypeRecurring').className =
+      'type-btn' + (selectedType === 'recurring' ? ' active-recurring' : '');
+    // update add button color
+    btnAddTask.style.background = selectedType === 'recurring'
+      ? 'var(--accent-recurring)' : 'var(--accent-once)';
+  });
+});
+
+// ── Add Task ──
+btnAddTask.addEventListener('click', addTask);
+inputName.addEventListener('keydown', e => { if (e.key === 'Enter') addTask(); });
+
+function addTask() {
+  const name = inputName.value.trim();
+  if (!name) { inputName.focus(); shake(inputName); return; }
+  const mins = Math.max(1, parseInt(inputDuration.value) || 5);
+
+  tasks.push({ id: uid++, name, duration: mins * 60, type: selectedType, count: 0 });
+  inputName.value = '';
+  inputName.focus();
+
+  if (!currentTask) loadNext();
+  else renderQueue();
+  save();
+}
+
+function shake(el) {
+  el.style.borderColor = 'var(--danger)';
+  setTimeout(() => { el.style.borderColor = ''; }, 700);
+}
+
+// ── Timer Logic ──
+function loadNext() {
+  clearInterval(ticker);
+  running = false;
+  if (tasks.length === 0) {
+    currentTask = null;
+    renderAll();
+    return;
+  }
+  currentTask = tasks[0];
+  timeLeft    = currentTask.duration;
+  totalTime   = currentTask.duration;
+  renderAll();
+}
+
+function startPause() {
+  if (!currentTask) return;
+  running = !running;
+  if (running) {
+    ticker = setInterval(tick, 1000);
+  } else {
+    clearInterval(ticker);
+  }
+  btnStartPause.textContent = running ? '暂停' : '继续';
+}
+
+function tick() {
+  if (timeLeft <= 0) {
+    clearInterval(ticker);
+    running = false;
+    triggerAlarm();
+    doComplete();
+    return;
+  }
+  timeLeft--;
+  refreshTimerDisplay();
+}
+
+function triggerAlarm() {
+  timerSection.classList.add('alarm');
+  timerSection.addEventListener('animationend', () => timerSection.classList.remove('alarm'), { once: true });
+}
+
+function doComplete() {
+  if (!currentTask) return;
+  clearInterval(ticker);
+  running = false;
+
+  const t = tasks.shift();
+
+  if (t.type === 'once') {
+    t.count = 1;
+    doneTasks.unshift(t);
+  } else {
+    t.count++;
+    tasks.push(t); // put at end
+  }
+
+  loadNext();
+  save();
+}
+
+function doReset() {
+  if (!currentTask) return;
+  clearInterval(ticker);
+  running = false;
+  timeLeft = currentTask.duration;
+  totalTime = currentTask.duration;
+  btnStartPause.textContent = '开始';
+  refreshTimerDisplay();
+}
+
+function skipCurrent() {
+  if (!currentTask) return;
+  clearInterval(ticker);
+  running = false;
+  tasks.shift(); // discard
+  loadNext();
+  save();
+}
+
+// ── Render ──
+function renderAll() {
+  renderTimer();
+  renderQueue();
+  renderDone();
+}
+
+function renderTimer() {
+  if (!currentTask) {
+    currentInfo.style.display = 'block';
+    timerRing.style.display   = 'none';
+    timerControls.style.display = 'none';
+    timerHint.style.display   = 'none';
+    currentInfo.innerHTML     = '<span>暂无任务，在下方添加任务开始</span>';
+    return;
+  }
+
+  currentInfo.style.display   = 'block';
+  timerRing.style.display     = 'block';
+  timerControls.style.display = 'flex';
+  timerHint.style.display     = 'block';
+
+  const isRecurring = currentTask.type === 'recurring';
+  const color       = isRecurring ? 'var(--accent-recurring)' : 'var(--accent-once)';
+  progressCircle.style.stroke = color;
+  btnStartPause.style.background = color;
+
+  const countHtml = isRecurring && currentTask.count > 0
+    ? `<span class="loop-pill">已循环 ${currentTask.count} 次</span>` : '';
+
+  currentInfo.innerHTML = `
+    <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+      <div class="current-task-name">${esc(currentTask.name)}</div>
+      <div class="task-meta-row">
+        <span class="badge ${isRecurring ? 'badge-recurring' : 'badge-once'}">
+          ${isRecurring ? '循环' : '一次性'}
+        </span>
+        ${countHtml}
+      </div>
+    </div>
+  `;
+
+  btnStartPause.textContent = running ? '暂停' : '开始';
+  refreshTimerDisplay();
+}
+
+function refreshTimerDisplay() {
+  const m = String(Math.floor(timeLeft / 60)).padStart(2, '0');
+  const s = String(timeLeft % 60).padStart(2, '0');
+  timerDisplay.textContent = `${m}:${s}`;
+
+  const ratio  = totalTime > 0 ? timeLeft / totalTime : 0;
+  const offset = CIRCUMFERENCE * (1 - ratio);
+  progressCircle.style.strokeDashoffset = offset;
+
+  // Warn color when ≤ 10%
+  if (ratio <= 0.1 && currentTask) {
+    progressCircle.style.stroke = 'var(--warn)';
+  } else if (currentTask) {
+    progressCircle.style.stroke = currentTask.type === 'recurring'
+      ? 'var(--accent-recurring)' : 'var(--accent-once)';
+  }
+}
+
+function renderQueue() {
+  const upcoming = tasks.slice(1); // skip current (tasks[0])
+  const total    = tasks.length;
+
+  queueCountLbl.textContent = total > 0 ? `共 ${total} 个` : '';
+
+  if (upcoming.length === 0) {
+    queueList.innerHTML = `<div class="empty-msg">队列为空</div>`;
+    return;
+  }
+
+  queueList.innerHTML = upcoming.map((t, i) => {
+    const isR    = t.type === 'recurring';
+    const mins   = Math.ceil(t.duration / 60);
+    const pill   = isR && t.count > 0 ? `<span class="loop-pill">×${t.count}</span>` : '';
+    return `
+      <div class="task-card type-${t.type}">
+        <div style="min-width:20px;text-align:center;font-size:.8rem;color:var(--text-muted);font-weight:700">${i + 2}</div>
+        <div class="card-body">
+          <div class="card-name">${esc(t.name)}</div>
+          <div class="card-sub">
+            <span>${mins} 分钟</span>
+            <span>${isR ? '循环' : '一次性'}</span>
+            ${pill}
+          </div>
+        </div>
+        <button class="remove-btn" onclick="removeTask(${t.id})" title="删除">✕</button>
+      </div>`;
+  }).join('');
+}
+
+function renderDone() {
+  if (doneTasks.length === 0) {
+    completedSection.style.display = 'none';
+    return;
+  }
+  completedSection.style.display = 'flex';
+  completedList.innerHTML = doneTasks.map(t => {
+    const mins = Math.ceil(t.duration / 60);
+    return `
+      <div class="task-card type-once done">
+        <div class="card-body">
+          <div class="card-name">${esc(t.name)}</div>
+          <div class="card-sub"><span>${mins} 分钟</span><span>已完成</span></div>
+        </div>
+        <span class="check-icon">✓</span>
+      </div>`;
+  }).join('');
+}
+
+// ── Remove from queue ──
+function removeTask(id) {
+  if (currentTask && currentTask.id === id) {
+    skipCurrent();
+    return;
+  }
+  tasks = tasks.filter(t => t.id !== id);
+  renderQueue();
+  save();
+}
+
+// ── Buttons ──
+btnStartPause.addEventListener('click', startPause);
+btnComplete.addEventListener('click', doComplete);
+btnReset.addEventListener('click', doReset);
+btnClearDone.addEventListener('click', () => { doneTasks = []; renderDone(); save(); });
+
+// ── Keyboard ──
+document.addEventListener('keydown', e => {
+  if (e.target === inputName || e.target === inputDuration) return;
+  if (e.code === 'Space')  { e.preventDefault(); startPause(); }
+  if (e.code === 'Enter')  { e.preventDefault(); doComplete(); }
+  if (e.code === 'Delete' || e.code === 'Backspace') { e.preventDefault(); skipCurrent(); }
+});
+
+// ── Persist ──
+function save() {
+  try {
+    localStorage.setItem('tt_tasks',   JSON.stringify(tasks));
+    localStorage.setItem('tt_done',    JSON.stringify(doneTasks));
+    localStorage.setItem('tt_uid',     uid);
+  } catch (_) {}
+}
+
+function load() {
+  try {
+    const t = localStorage.getItem('tt_tasks');
+    const d = localStorage.getItem('tt_done');
+    const u = localStorage.getItem('tt_uid');
+    if (t) tasks     = JSON.parse(t);
+    if (d) doneTasks = JSON.parse(d);
+    if (u) uid       = parseInt(u) || 1;
+  } catch (_) {}
+}
+
+// ── Helpers ──
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Init ──
+load();
+if (tasks.length > 0) loadNext();
+else renderAll();
+</script>
+</body>
+</html>

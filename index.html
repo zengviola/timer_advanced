@@ -1055,7 +1055,7 @@ function fmtSub(sec) {
 function updateWater() {
   const card = document.getElementById('waterCard');
   const today = todayStr();
-  const allT = [...tasks, ...dayHeldTasks, ...skippedTasks.map(s => s.task), ...shelvedTasks];
+  const allT = [...tasks, ...bigTasks, ...dayHeldTasks, ...skippedTasks.map(s => s.task), ...shelvedTasks];
   const water = allT.filter(t => t.name && t.name.includes('喝水'));
   if (water.length === 0) { card.style.display = 'none'; return; }
   card.style.display = 'flex';

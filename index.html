@@ -844,6 +844,7 @@ document.addEventListener('visibilitychange', () => {
   if (today !== lastDay) {
     lastDay = today;
     totalToday = 0;
+    todayAtResume = 0;  // reset so running tick doesn't restore old value
     skippedTasks = [];
     done = done.filter(t => t.type !== 'daily');
     updateStats(); renderSkipped(); renderDone();
@@ -1384,6 +1385,7 @@ setInterval(() => {
   if (today !== lastDay) {
     lastDay = today;
     totalToday = 0;
+    todayAtResume = 0;  // reset so running tick doesn't restore old value
     // Restore all skipped cycle tasks back to queue at midnight
     skippedTasks.forEach(({ task: t }) => {
       if (t.type !== 'daily') pushTop(t); // daily tasks re-injected via checkDailyTasks

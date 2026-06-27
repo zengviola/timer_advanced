@@ -837,9 +837,21 @@ function tick() {
   updateStats();
 }
 
-// Sync immediately when tab becomes visible again
+// Sync immediately when tab becomes visible again; also check for day rollover
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && running) tick();
+  if (document.hidden) return;
+  const today = todayStr();
+  if (today !== lastDay) {
+    lastDay = today;
+    totalToday = 0;
+    skippedTasks = [];
+    done = done.filter(t => t.type !== 'daily');
+    updateStats(); renderSkipped(); renderDone();
+    checkDailyTasks();
+    if (!cur) loadNext(); else renderQ();
+    save();
+  }
+  if (running) tick();
 });
 
 function doComplete() {
@@ -1580,7 +1592,9 @@ function clearCloudToken() {
 function getCloudPayload() {
   return JSON.stringify({
     tasks, bigTasks, dailyDefs, done, uid,
-    totalAllTime, totalToday, skippedTasks, shelvedTasks,
+    totalAllTime,
+    totalToday, totalTodayDate: todayStr(),   // separate date for daily reset check
+    skippedTasks, shelvedTasks,
     homeTasks, workMode, smallCount,
     left, total, curId: cur ? cur.id : -1,
     savedDate: todayStr()
@@ -1596,8 +1610,8 @@ function applyCloudPayload(raw) {
     if (d.done       !== undefined) done         = d.done;
     if (d.uid        !== undefined) uid          = d.uid;
     if (d.totalAllTime !== undefined) totalAllTime = d.totalAllTime;
-    if (d.totalToday !== undefined && d.savedDate === todayStr()) totalToday = d.totalToday;
-    if (d.skippedTasks !== undefined && d.savedDate === todayStr()) skippedTasks = d.skippedTasks;
+    if (d.totalToday !== undefined && (d.totalTodayDate || d.savedDate) === todayStr()) totalToday = d.totalToday;
+    if (d.skippedTasks !== undefined && (d.totalTodayDate || d.savedDate) === todayStr()) skippedTasks = d.skippedTasks;
     if (d.shelvedTasks !== undefined) shelvedTasks = d.shelvedTasks;
     if (d.homeTasks  !== undefined) homeTasks    = d.homeTasks;
     if (d.workMode   !== undefined) workMode     = d.workMode;

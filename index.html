@@ -348,6 +348,11 @@
       <div class="stat-value" id="statWater" style="font-size:1.1rem">0</div>
       <div class="stat-sub"  id="statWaterSub">杯</div>
     </div>
+    <div class="stat-card" style="cursor:pointer;user-select:none;border:1px solid rgba(239,68,68,.2)" onclick="resetToday()" title="重置今日计时">
+      <div class="stat-label" style="color:var(--danger)">今日重置</div>
+      <div class="stat-value" style="font-size:0.85rem;color:var(--danger)">↺</div>
+      <div class="stat-sub">点击归零</div>
+    </div>
   </div>
 
   <!-- Timer -->
@@ -1071,6 +1076,11 @@ function updateStats() {
   statTotalSub.textContent = fmtSub(totalAllTime);
   updateWater();
 }
+function resetToday() {
+  if (!confirm('把今日已用归零？')) return;
+  totalToday = 0; todayAtResume = 0;
+  updateStats(); save();
+}
 
 // ── Render ──
 function renderAll() { renderTimer(); renderQ(); renderDaily(); renderBig(); renderSkipped(); renderShelved(); renderDone(); }
@@ -1612,7 +1622,9 @@ function applyCloudPayload(raw) {
     if (d.done       !== undefined) done         = d.done;
     if (d.uid        !== undefined) uid          = d.uid;
     if (d.totalAllTime !== undefined) totalAllTime = d.totalAllTime;
-    if (d.totalToday !== undefined && (d.totalTodayDate || d.savedDate) === todayStr()) totalToday = d.totalToday;
+    if (d.totalToday !== undefined && (d.totalTodayDate || d.savedDate) === todayStr()) {
+      totalToday = d.totalToday > 86400 ? 0 : d.totalToday;  // sanity: >24h is impossible
+    }
     if (d.skippedTasks !== undefined && (d.totalTodayDate || d.savedDate) === todayStr()) skippedTasks = d.skippedTasks;
     if (d.shelvedTasks !== undefined) shelvedTasks = d.shelvedTasks;
     if (d.homeTasks  !== undefined) homeTasks    = d.homeTasks;

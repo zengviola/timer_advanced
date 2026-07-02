@@ -419,6 +419,7 @@
   <div class="section" id="skippedSec" style="display:none">
     <div class="sec-head">
       <span class="sec-label" style="color:var(--warn)">今日跳过</span>
+      <button class="btn btn-muted btn-sm" onclick="restoreAll()">全部恢复</button>
     </div>
     <div id="skippedList"></div>
   </div>
@@ -1012,6 +1013,24 @@ function restoreSkipped(taskId) {
   else renderQ();
   renderSkipped();
   save();
+}
+
+function restoreAll() {
+  // Restore all skipped tasks
+  [...skippedTasks].forEach(({ task }) => {
+    if (task.type === 'daily') {
+      const def = dailyDefs.find(d => d.id === task.dailyId);
+      if (def) def.skippedToday = null;
+    }
+    tasks.push(task);
+  });
+  skippedTasks = [];
+  // Restore all day-held tasks regardless of day restriction
+  dayHeldTasks.forEach(t => tasks.push(t));
+  dayHeldTasks = [];
+  if (!cur) loadNext();
+  else renderQ();
+  renderSkipped(); renderDaily(); save();
 }
 
 function removeTask(id) {

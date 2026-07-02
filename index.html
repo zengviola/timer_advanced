@@ -1032,9 +1032,12 @@ function restoreAll() {
   // Restore all day-held tasks regardless of day restriction
   dayHeldTasks.forEach(t => tasks.push(t));
   dayHeldTasks = [];
+  // Restore all shelved tasks
+  shelvedTasks.forEach(t => tasks.push(t));
+  shelvedTasks = [];
   if (!cur) loadNext();
   else renderQ();
-  renderSkipped(); renderDaily(); save();
+  renderSkipped(); renderShelved(); renderDaily(); save();
 }
 
 function removeTask(id) {

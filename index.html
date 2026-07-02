@@ -394,7 +394,10 @@
   <div class="section">
     <div class="sec-head">
       <span class="sec-label">待办队列</span>
-      <span id="qCnt" style="font-size:.78rem;color:var(--muted)"></span>
+      <span style="display:flex;gap:8px;align-items:center">
+        <button id="btnRestoreAll" class="btn btn-muted btn-sm" onclick="restoreAll()" style="display:none">全部恢复</button>
+        <span id="qCnt" style="font-size:.78rem;color:var(--muted)"></span>
+      </span>
     </div>
     <div id="qList"></div>
   </div>
@@ -573,8 +576,9 @@ const statTotalSub = document.getElementById('statTotalSub');
 const btnSkip      = document.getElementById('btnSkip');
 const btnSkipToday = document.getElementById('btnSkipToday');
 const btnShelve    = document.getElementById('btnShelve');
-const skippedSec   = document.getElementById('skippedSec');
-const skippedList  = document.getElementById('skippedList');
+const skippedSec      = document.getElementById('skippedSec');
+const skippedList     = document.getElementById('skippedList');
+const btnRestoreAll   = document.getElementById('btnRestoreAll');
 const shelvedSec   = document.getElementById('shelvedSec');
 const shelvedList  = document.getElementById('shelvedList');
 
@@ -1106,6 +1110,7 @@ function renderAll() { renderTimer(); renderQ(); renderDaily(); renderBig(); ren
 
 function renderSkipped() {
   // Show small/big/daily tasks skipped today
+  btnRestoreAll.style.display = (skippedTasks.length > 0 || dayHeldTasks.length > 0) ? 'inline-block' : 'none';
   if (skippedTasks.length === 0) { skippedSec.style.display = 'none'; return; }
   skippedSec.style.display = 'flex';
   skippedList.innerHTML = skippedTasks.map(({ task: t }) => {

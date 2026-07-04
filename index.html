@@ -1130,20 +1130,24 @@ function toggleSpendCoins() {
   if (spendingCoins) {
     clearInterval(spendInterval); spendInterval = null;
     spendingCoins = false;
-  } else {
-    if (coins <= 0) return;
-    spendingCoins = true;
-    spendInterval = setInterval(() => {
-      if (coins <= 0) {
-        clearInterval(spendInterval); spendInterval = null;
-        spendingCoins = false;
-      } else {
-        coins--; coinsToday = Math.max(0, coinsToday - 1);
-      }
-      updateStats(); save();
-    }, 60000);
+    updateStats();
+    return;
   }
+  if (coins <= 0 && coinsToday <= 0) {
+    alert('没有金币可以使用，完成任务后再来！');
+    return;
+  }
+  spendingCoins = true;
   updateStats();
+  spendInterval = setInterval(() => {
+    if (coins <= 0) {
+      clearInterval(spendInterval); spendInterval = null;
+      spendingCoins = false;
+    } else {
+      coins--; coinsToday = Math.max(0, coinsToday - 1);
+    }
+    updateStats(); save();
+  }, 60000);
 }
 
 // ── Render ──

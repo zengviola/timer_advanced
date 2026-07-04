@@ -348,10 +348,10 @@
       <div class="stat-value" id="statWater" style="font-size:1.1rem">0</div>
       <div class="stat-sub"  id="statWaterSub">杯</div>
     </div>
-    <div class="stat-card">
+    <div class="stat-card" style="cursor:pointer;user-select:none" onclick="toggleSpendCoins()" id="coinCard" title="点击开始/停止消耗金币">
       <div class="stat-label">🪙 金币</div>
       <div class="stat-value" id="statCoins" style="font-size:1.1rem">0</div>
-      <div class="stat-sub"  id="statCoinsSub">今日 0</div>
+      <div class="stat-sub"  id="statCoinsSub">累计 0</div>
     </div>
     <div class="stat-card" style="cursor:pointer;user-select:none;border:1px solid rgba(239,68,68,.2)" onclick="resetToday()" title="重置今日计时">
       <div class="stat-label" style="color:var(--danger)">今日重置</div>
@@ -536,6 +536,8 @@ let totalAllTime  = 0;
 let totalToday    = 0;
 let coins         = 0;
 let coinsToday    = 0;
+let spendingCoins = false;
+let spendInterval = null;
 let _savedLeft    = null;
 let _savedTotal   = null;
 let _savedCurId   = null;
@@ -1115,13 +1117,33 @@ function updateStats() {
   statTotal.textContent    = fmtTime(totalAllTime);
   statTotalSub.textContent = fmtSub(totalAllTime);
   document.getElementById('statCoins').textContent    = coinsToday;
-  document.getElementById('statCoinsSub').textContent = `累计 ${coins}`;
+  document.getElementById('statCoinsSub').textContent = spendingCoins ? `消耗中… 累计 ${coins}` : `累计 ${coins}`;
+  document.getElementById('coinCard').style.border    = spendingCoins ? '1px solid var(--warn)' : '';
   updateWater();
 }
 function resetToday() {
   if (!confirm('把今日已用归零？')) return;
   totalToday = 0; todayAtResume = 0;
   updateStats(); save();
+}
+function toggleSpendCoins() {
+  if (spendingCoins) {
+    clearInterval(spendInterval); spendInterval = null;
+    spendingCoins = false;
+  } else {
+    if (coins <= 0) return;
+    spendingCoins = true;
+    spendInterval = setInterval(() => {
+      if (coins <= 0) {
+        clearInterval(spendInterval); spendInterval = null;
+        spendingCoins = false;
+      } else {
+        coins--; coinsToday = Math.max(0, coinsToday - 1);
+      }
+      updateStats(); save();
+    }, 60000);
+  }
+  updateStats();
 }
 
 // ── Render ──

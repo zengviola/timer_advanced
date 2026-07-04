@@ -1805,12 +1805,53 @@ function debouncePush() {
   syncTimer = setTimeout(pushToCloud, 3000);
 }
 
+let lastCmdTs = 0;
+
+function executeCmd(cmd) {
+  if (!cmd || !cmd.ts || cmd.ts <= lastCmdTs) return;
+  lastCmdTs = cmd.ts;
+  switch (cmd.type) {
+    case 'pause':    if (running && cur) startPause(); break;
+    case 'resume':   if (!running && cur) startPause(); break;
+    case 'complete': if (cur) doComplete(); break;
+    case 'skip':     if (cur) skipTask(); break;
+    case 'skipToday':if (cur) skipToday(); break;
+  }
+}
+
+async function pollCmd() {
+  if (!cloudToken || !cloudGistId) return;
+  try {
+    const res = await fetch(`https://api.github.com/gists/${cloudGistId}`, {
+      headers: { Authorization: `token ${cloudToken}`, Accept: 'application/vnd.github+json' }
+    });
+    if (!res.ok) return;
+    const gist = await res.json();
+    const raw = gist.files?.['timer_cmd.json']?.content;
+    if (raw) executeCmd(JSON.parse(raw));
+  } catch(e) {}
+}
+
+async function sendCmd(type) {
+  if (!cloudToken || !cloudGistId) return;
+  const cmd = { type, ts: Date.now() };
+  const body = JSON.stringify({
+    files: { 'timer_cmd.json': { content: JSON.stringify(cmd) } }
+  });
+  await fetch(`https://api.github.com/gists/${cloudGistId}`, {
+    method: 'PATCH',
+    headers: { Authorization: `token ${cloudToken}`, 'Content-Type': 'application/json', Accept: 'application/vnd.github+json' },
+    body
+  });
+}
+
 function initCloud() {
   cloudToken  = localStorage.getItem('tt_cloud_token') || '';
   cloudGistId = localStorage.getItem('tt_cloud_gist')  || '';
   if (cloudToken) {
     setChip('syncing', '↻ 同步中…');
     loadFromCloud();
+    setInterval(pollCmd, 15000);
   } else {
     setChip('idle', '☁ 未配置');
   }

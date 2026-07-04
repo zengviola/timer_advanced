@@ -878,8 +878,10 @@ function doComplete() {
 
   const t = tasks.shift();
 
-  // Award coins based on actual time spent (capped at 2× duration to limit overtime abuse)
-  const earnedSecs = Math.min(totalAllTime - totalAtResume, t.duration * 2);
+  // Award coins based on actual time spent; guard against null totalAtResume
+  const earnedSecs = totalAtResume !== null
+    ? Math.min(totalAllTime - totalAtResume, t.duration * 2)
+    : Math.min(t.duration, t.duration);
   const earned = Math.max(1, Math.round(earnedSecs / 60));
   coins += earned; coinsToday += earned;
 
@@ -1112,8 +1114,8 @@ function updateStats() {
   statTodaySub.textContent = fmtSub(totalToday);
   statTotal.textContent    = fmtTime(totalAllTime);
   statTotalSub.textContent = fmtSub(totalAllTime);
-  document.getElementById('statCoins').textContent    = coins;
-  document.getElementById('statCoinsSub').textContent = `今日 ${coinsToday}`;
+  document.getElementById('statCoins').textContent    = coinsToday;
+  document.getElementById('statCoinsSub').textContent = `累计 ${coins}`;
   updateWater();
 }
 function resetToday() {

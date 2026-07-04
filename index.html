@@ -348,6 +348,11 @@
       <div class="stat-value" id="statWater" style="font-size:1.1rem">0</div>
       <div class="stat-sub"  id="statWaterSub">杯</div>
     </div>
+    <div class="stat-card">
+      <div class="stat-label">🪙 金币</div>
+      <div class="stat-value" id="statCoins" style="font-size:1.1rem">0</div>
+      <div class="stat-sub"  id="statCoinsSub">今日 0</div>
+    </div>
     <div class="stat-card" style="cursor:pointer;user-select:none;border:1px solid rgba(239,68,68,.2)" onclick="resetToday()" title="重置今日计时">
       <div class="stat-label" style="color:var(--danger)">今日重置</div>
       <div class="stat-value" style="font-size:0.85rem;color:var(--danger)">↺</div>
@@ -529,6 +534,8 @@ let todayAtResume  = null;  // totalToday when run began
 let alarmFired     = false; // prevent repeat alarm animation
 let totalAllTime  = 0;
 let totalToday    = 0;
+let coins         = 0;
+let coinsToday    = 0;
 let _savedLeft    = null;
 let _savedTotal   = null;
 let _savedCurId   = null;
@@ -871,6 +878,11 @@ function doComplete() {
 
   const t = tasks.shift();
 
+  // Award coins based on actual time spent (capped at 2× duration to limit overtime abuse)
+  const earnedSecs = Math.min(totalAllTime - totalAtResume, t.duration * 2);
+  const earned = Math.max(1, Math.round(earnedSecs / 60));
+  coins += earned; coinsToday += earned;
+
   if (t.type === 'once') {
     t.count = 1;
     done.unshift(t);
@@ -1100,6 +1112,8 @@ function updateStats() {
   statTodaySub.textContent = fmtSub(totalToday);
   statTotal.textContent    = fmtTime(totalAllTime);
   statTotalSub.textContent = fmtSub(totalAllTime);
+  document.getElementById('statCoins').textContent    = coins;
+  document.getElementById('statCoinsSub').textContent = `今日 ${coinsToday}`;
   updateWater();
 }
 function resetToday() {
@@ -1358,9 +1372,12 @@ function save() {
     localStorage.setItem('tt_left',      left);
     localStorage.setItem('tt_total',     total);
     localStorage.setItem('tt_curId',     cur ? cur.id : -1);
-    localStorage.setItem('tt_allTime',   totalAllTime);
-    localStorage.setItem('tt_today',     totalToday);
-    localStorage.setItem('tt_todayDate', todayStr());
+    localStorage.setItem('tt_allTime',      totalAllTime);
+    localStorage.setItem('tt_today',        totalToday);
+    localStorage.setItem('tt_todayDate',    todayStr());
+    localStorage.setItem('tt_coins',        coins);
+    localStorage.setItem('tt_coinsToday',   coinsToday);
+    localStorage.setItem('tt_coinsTodayDate', todayStr());
     localStorage.setItem('tt_skipped',   JSON.stringify(skippedTasks));
     localStorage.setItem('tt_shelved',   JSON.stringify(shelvedTasks));
     localStorage.setItem('tt_homeTasks',  JSON.stringify(homeTasks));
@@ -1398,6 +1415,11 @@ function load() {
     if (u)  uid       = parseInt(u)  || 1;
     if (at) totalAllTime = parseInt(at) || 0;
     if (td && tdd === todayStr()) totalToday = parseInt(td) || 0;
+    const co = localStorage.getItem('tt_coins');
+    const cot= localStorage.getItem('tt_coinsToday');
+    const cotd = localStorage.getItem('tt_coinsTodayDate');
+    if (co) coins = parseInt(co) || 0;
+    if (cot && cotd === todayStr()) coinsToday = parseInt(cot) || 0;
     const sk = pick('tt_skipped',  'tt5_skipped');
     if (sk && tdd === todayStr()) skippedTasks = JSON.parse(sk);
     const sh = localStorage.getItem('tt_shelved');
@@ -1632,7 +1654,8 @@ function getCloudPayload() {
   return JSON.stringify({
     tasks, bigTasks, dailyDefs, done, uid,
     totalAllTime,
-    totalToday, totalTodayDate: todayStr(),   // separate date for daily reset check
+    totalToday, totalTodayDate: todayStr(),
+    coins, coinsToday, coinsTodayDate: todayStr(),
     skippedTasks, shelvedTasks,
     homeTasks, workMode, smallCount,
     left, total, curId: cur ? cur.id : -1,
@@ -1650,8 +1673,10 @@ function applyCloudPayload(raw) {
     if (d.uid        !== undefined) uid          = d.uid;
     if (d.totalAllTime !== undefined) totalAllTime = d.totalAllTime;
     if (d.totalToday !== undefined && (d.totalTodayDate || d.savedDate) === todayStr()) {
-      totalToday = d.totalToday > 86400 ? 0 : d.totalToday;  // sanity: >24h is impossible
+      totalToday = d.totalToday > 86400 ? 0 : d.totalToday;
     }
+    if (d.coins !== undefined) coins = d.coins;
+    if (d.coinsToday !== undefined && (d.coinsTodayDate || d.savedDate) === todayStr()) coinsToday = d.coinsToday;
     if (d.skippedTasks !== undefined && (d.totalTodayDate || d.savedDate) === todayStr()) skippedTasks = d.skippedTasks;
     if (d.shelvedTasks !== undefined) shelvedTasks = d.shelvedTasks;
     if (d.homeTasks  !== undefined) homeTasks    = d.homeTasks;

@@ -538,6 +538,8 @@ let coins         = 0;
 let coinsToday    = 0;
 let spendingCoins = false;
 let spendInterval = null;
+let spendStartAt  = null;
+let spendDeducted = 0;
 let _savedLeft    = null;
 let _savedTotal   = null;
 let _savedCurId   = null;
@@ -872,6 +874,7 @@ document.addEventListener('visibilitychange', () => {
     save();
   }
   if (running) tick();
+  if (spendingCoins) spendTick();
 });
 
 function doComplete() {
@@ -1129,8 +1132,8 @@ function resetToday() {
 function toggleSpendCoins() {
   if (spendingCoins) {
     clearInterval(spendInterval); spendInterval = null;
-    spendingCoins = false;
-    updateStats();
+    spendingCoins = false; spendStartAt = null; spendDeducted = 0;
+    updateStats(); save();
     return;
   }
   if (coins <= 0 && coinsToday <= 0) {
@@ -1138,16 +1141,31 @@ function toggleSpendCoins() {
     return;
   }
   spendingCoins = true;
-  updateStats();
-  spendInterval = setInterval(() => {
-    if (coins <= 0) {
-      clearInterval(spendInterval); spendInterval = null;
-      spendingCoins = false;
-    } else {
+  spendStartAt  = Date.now();
+  spendDeducted = 0;
+  updateStats(); save();
+  spendInterval = setInterval(spendTick, 1000);
+}
+
+// Timestamp-based, not a plain counter — mobile browsers throttle/suspend
+// setInterval while the app is backgrounded, so we recompute from wall-clock
+// elapsed time (matches tick()'s approach) instead of trusting tick counts.
+function spendTick() {
+  if (!spendingCoins || !spendStartAt) return;
+  const elapsedMin = Math.floor((Date.now() - spendStartAt) / 60000);
+  const due = elapsedMin - spendDeducted;
+  if (due > 0) {
+    for (let i = 0; i < due && coins > 0; i++) {
       coins--; coinsToday = Math.max(0, coinsToday - 1);
     }
-    updateStats(); save();
-  }, 60000);
+    spendDeducted = elapsedMin;
+    save();
+  }
+  if (coins <= 0) {
+    clearInterval(spendInterval); spendInterval = null;
+    spendingCoins = false; spendStartAt = null; spendDeducted = 0;
+  }
+  updateStats();
 }
 
 // ── Render ──
@@ -1406,6 +1424,8 @@ function save() {
     localStorage.setItem('tt_coins',        coins);
     localStorage.setItem('tt_coinsToday',   coinsToday);
     localStorage.setItem('tt_coinsTodayDate', todayStr());
+    localStorage.setItem('tt_spending',     spendingCoins ? '1' : '0');
+    localStorage.setItem('tt_spendStartAt', spendStartAt || '');
     localStorage.setItem('tt_skipped',   JSON.stringify(skippedTasks));
     localStorage.setItem('tt_shelved',   JSON.stringify(shelvedTasks));
     localStorage.setItem('tt_homeTasks',  JSON.stringify(homeTasks));
@@ -1448,6 +1468,9 @@ function load() {
     const cotd = localStorage.getItem('tt_coinsTodayDate');
     if (co) coins = parseInt(co) || 0;
     if (cot && cotd === todayStr()) coinsToday = parseInt(cot) || 0;
+    const sp  = localStorage.getItem('tt_spending');
+    const spa = localStorage.getItem('tt_spendStartAt');
+    if (sp === '1' && spa) { spendingCoins = true; spendStartAt = parseInt(spa) || null; }
     const sk = pick('tt_skipped',  'tt5_skipped');
     if (sk && tdd === todayStr()) skippedTasks = JSON.parse(sk);
     const sh = localStorage.getItem('tt_shelved');
@@ -1868,6 +1891,7 @@ checkDailyTasks();
 checkDayHeld();
 if (tasks.length > 0) loadNext();
 else { renderAll(); updateStats(); }
+if (spendingCoins && spendStartAt) { spendTick(); spendInterval = setInterval(spendTick, 1000); }
 initCloud();
 </script>
 

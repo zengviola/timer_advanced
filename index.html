@@ -297,6 +297,37 @@
       letter-spacing: -0.02em;
     }
     .stat-sub { font-size: 0.7rem; color: var(--surf3); }
+
+    /* ── Coin Row ── */
+    .coin-row {
+      background: var(--surf); border-radius: 10px;
+      padding: 12px 16px; display: flex; flex-direction: column; gap: 10px;
+      transition: border-color .2s;
+      border: 1px solid transparent;
+    }
+    .coin-row.spending { border-color: var(--warn); }
+    .coin-row-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .coin-main { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .coin-label {
+      font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--muted);
+    }
+    .coin-value { font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+    .coin-sub { font-size: 0.7rem; color: var(--surf3); }
+    .coin-spend-detail {
+      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+      font-size: 0.78rem; color: var(--muted);
+      border-top: 1px solid var(--surf2); padding-top: 10px;
+    }
+    .coin-spend-detail b { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 700; }
+    .btn-start-spend, .btn-stop-spend {
+      border: none; border-radius: 8px; padding: 6px 14px;
+      font-size: 0.78rem; font-weight: 700; cursor: pointer; font-family: inherit;
+      transition: opacity .15s;
+    }
+    .btn-start-spend:hover, .btn-stop-spend:hover { opacity: .85; }
+    .btn-start-spend { background: var(--surf2); color: var(--muted); }
+    .btn-stop-spend  { background: var(--danger); color: #fff; margin-left: auto; }
   </style>
 </head>
 <body>
@@ -348,15 +379,28 @@
       <div class="stat-value" id="statWater" style="font-size:1.1rem">0</div>
       <div class="stat-sub"  id="statWaterSub">杯</div>
     </div>
-    <div class="stat-card" style="cursor:pointer;user-select:none" onclick="toggleSpendCoins()" id="coinCard" title="点击开始/停止消耗金币">
-      <div class="stat-label">🪙 金币</div>
-      <div class="stat-value" id="statCoins" style="font-size:1.1rem">0</div>
-      <div class="stat-sub"  id="statCoinsSub">累计 0</div>
-    </div>
     <div class="stat-card" style="cursor:pointer;user-select:none;border:1px solid rgba(239,68,68,.2)" onclick="resetToday()" title="重置今日计时">
       <div class="stat-label" style="color:var(--danger)">今日重置</div>
       <div class="stat-value" style="font-size:0.85rem;color:var(--danger)">↺</div>
       <div class="stat-sub">点击归零</div>
+    </div>
+  </div>
+
+  <!-- Coin Row -->
+  <div class="coin-row" id="coinRow">
+    <div class="coin-row-top">
+      <div class="coin-main">
+        <span class="coin-label">🪙 金币</span>
+        <span class="coin-value" id="statCoins">0</span>
+        <span class="coin-sub" id="statCoinsSub">累计 0</span>
+      </div>
+      <button class="btn-start-spend" id="btnStartSpend" onclick="toggleSpendCoins()">开始消耗</button>
+    </div>
+    <div class="coin-spend-detail" id="coinSpendDetail" style="display:none">
+      <span>开始 <b id="spendStartDisp">0</b></span>
+      <span>持续 <b id="spendElapsedDisp">00:00</b></span>
+      <span>已扣 <b id="spendDeductedDisp">0</b></span>
+      <button class="btn-stop-spend" onclick="toggleSpendCoins()">停止扣金币</button>
     </div>
   </div>
 
@@ -541,6 +585,7 @@ let spendingCoins = false;
 let spendInterval = null;
 let spendStartAt  = null;
 let spendDeducted = 0;
+let spendStartCoins = 0;  // coins balance at the moment the current spend session began
 let _savedLeft    = null;
 let _savedTotal   = null;
 let _savedCurId   = null;
@@ -1115,14 +1160,33 @@ function updateWater() {
   document.getElementById('statWater').textContent = count;
   document.getElementById('statWaterSub').textContent = count === 0 ? '还没喝' : '杯';
 }
+function fmtDur(ms) {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  const mm = String(m).padStart(2, '0');
+  const ss = String(s).padStart(2, '0');
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
 function updateStats() {
   statToday.textContent    = fmtTime(totalToday);
   statTodaySub.textContent = fmtSub(totalToday);
   statTotal.textContent    = fmtTime(totalAllTime);
   statTotalSub.textContent = fmtSub(totalAllTime);
   document.getElementById('statCoins').textContent    = coinsToday;
-  document.getElementById('statCoinsSub').textContent = spendingCoins ? `消耗中… 累计 ${coins}` : `累计 ${coins}`;
-  document.getElementById('coinCard').style.border    = spendingCoins ? '1px solid var(--warn)' : '';
+  document.getElementById('statCoinsSub').textContent = `累计 ${coins}`;
+  document.getElementById('coinRow').classList.toggle('spending', spendingCoins);
+  document.getElementById('btnStartSpend').style.display    = spendingCoins ? 'none' : 'inline-block';
+  const detail = document.getElementById('coinSpendDetail');
+  if (spendingCoins && spendStartAt) {
+    detail.style.display = 'flex';
+    document.getElementById('spendStartDisp').textContent    = spendStartCoins;
+    document.getElementById('spendElapsedDisp').textContent  = fmtDur(Date.now() - spendStartAt);
+    document.getElementById('spendDeductedDisp').textContent = Math.max(0, spendStartCoins - coins);
+  } else {
+    detail.style.display = 'none';
+  }
   updateWater();
 }
 function resetToday() {
@@ -1133,7 +1197,7 @@ function resetToday() {
 function toggleSpendCoins() {
   if (spendingCoins) {
     clearInterval(spendInterval); spendInterval = null;
-    spendingCoins = false; spendStartAt = null; spendDeducted = 0;
+    spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
     updateStats(); save();
     return;
   }
@@ -1141,9 +1205,10 @@ function toggleSpendCoins() {
     alert('没有金币可以使用，完成任务后再来！');
     return;
   }
-  spendingCoins = true;
-  spendStartAt  = Date.now();
-  spendDeducted = 0;
+  spendingCoins   = true;
+  spendStartAt    = Date.now();
+  spendDeducted   = 0;
+  spendStartCoins = coins;
   updateStats(); save();
   spendInterval = setInterval(spendTick, 1000);
 }
@@ -1165,7 +1230,7 @@ function spendTick() {
   }
   if (coins <= 0) {
     clearInterval(spendInterval); spendInterval = null;
-    spendingCoins = false; spendStartAt = null; spendDeducted = 0;
+    spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
   }
   updateStats();
 }
@@ -1429,6 +1494,7 @@ function save() {
     localStorage.setItem('tt_coinsTs',      coinsTs);
     localStorage.setItem('tt_spending',     spendingCoins ? '1' : '0');
     localStorage.setItem('tt_spendStartAt', spendStartAt || '');
+    localStorage.setItem('tt_spendStartCoins', spendStartCoins);
     localStorage.setItem('tt_skipped',   JSON.stringify(skippedTasks));
     localStorage.setItem('tt_shelved',   JSON.stringify(shelvedTasks));
     localStorage.setItem('tt_homeTasks',  JSON.stringify(homeTasks));
@@ -1475,7 +1541,12 @@ function load() {
     if (cts) coinsTs = parseInt(cts) || 0;
     const sp  = localStorage.getItem('tt_spending');
     const spa = localStorage.getItem('tt_spendStartAt');
-    if (sp === '1' && spa) { spendingCoins = true; spendStartAt = parseInt(spa) || null; }
+    const spc = localStorage.getItem('tt_spendStartCoins');
+    if (sp === '1' && spa) {
+      spendingCoins   = true;
+      spendStartAt    = parseInt(spa) || null;
+      spendStartCoins = spc !== null ? (parseInt(spc) || 0) : coins;
+    }
     const sk = pick('tt_skipped',  'tt5_skipped');
     if (sk && tdd === todayStr()) skippedTasks = JSON.parse(sk);
     const sh = localStorage.getItem('tt_shelved');

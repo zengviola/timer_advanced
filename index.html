@@ -521,6 +521,7 @@
         <div class="type-toggle" id="tagToggle">
           <button class="type-btn on on-once" data-tag="" onclick="setSelTag('')">无</button>
           <button class="type-btn"            data-tag="家" onclick="setSelTag('家')">🏠 家</button>
+          <button class="type-btn"            data-tag="工作" onclick="setSelTag('工作')">💼 工作</button>
         </div>
       </div>
     </div>
@@ -594,6 +595,7 @@ let shelvedTasks  = [];  // tasks shelved indefinitely until manually restored
 let smallCount    = 0;   // cumulative small-cycle completions (drives big-cycle triggers)
 let workMode      = true;  // true = 在公司, false = 不在公司
 let homeTasks     = [];    // 家-tagged tasks held aside while in work mode
+let workTasks     = [];    // 工作-tagged tasks held aside while in home mode
 let selTag        = '';    // selected tag in add form
 let selDays       = [];    // selected days for add form ([] = every day)
 let dayHeldTasks  = [];    // tasks held because today isn't their day
@@ -677,7 +679,7 @@ function setSelTag(tag) {
 
 function renderContext() {
   document.getElementById('statCtx').textContent    = workMode ? '公司' : '家';
-  document.getElementById('statCtxSub').textContent = workMode ? '家庭任务已隐藏' : '显示所有任务';
+  document.getElementById('statCtxSub').textContent = workMode ? '家庭任务已隐藏' : '工作任务已隐藏';
   document.getElementById('statCtx').style.color    = workMode ? 'var(--once)' : 'var(--small)';
 }
 
@@ -688,6 +690,9 @@ function toggleContext() {
     const pulled = tasks.filter(t => t.tag === '家');
     tasks = tasks.filter(t => t.tag !== '家');
     homeTasks.push(...pulled);
+    // Restore held 工作-tagged tasks to top of queue
+    workTasks.forEach(t => pushTop(t));
+    workTasks = [];
     // If current task is home-tagged, stop and reload
     if (cur && cur.tag === '家') {
       clearInterval(ticker); running = false; overSecs = 0;
@@ -698,7 +703,16 @@ function toggleContext() {
     // Moving to home mode: restore held home tasks to top of queue
     homeTasks.forEach(t => pushTop(t));
     homeTasks = [];
-    if (!cur) loadNext();
+    // Pull 工作-tagged tasks out of active queue
+    const pulled = tasks.filter(t => t.tag === '工作');
+    tasks = tasks.filter(t => t.tag !== '工作');
+    workTasks.push(...pulled);
+    // If current task is work-tagged, stop and reload
+    if (cur && cur.tag === '工作') {
+      clearInterval(ticker); running = false; overSecs = 0;
+      cur = null;
+      loadNext();
+    } else if (!cur) loadNext();
     else renderQ();
   }
   renderContext();
@@ -732,6 +746,9 @@ function addTask() {
     // If home-tagged task added while in work mode, hold it aside
     if (newTask.tag === '家' && workMode) {
       homeTasks.push(newTask);
+    // If work-tagged task added while in home mode, hold it aside
+    } else if (newTask.tag === '工作' && !workMode) {
+      workTasks.push(newTask);
     } else if (!taskActiveToday(newTask)) {
       dayHeldTasks.push(newTask);
     } else {
@@ -913,6 +930,7 @@ document.addEventListener('visibilitychange', () => {
     totalToday = 0;
     todayAtResume = 0;  // reset so running tick doesn't restore old value
     if (running) recordStart();  // rebase timerStartedAt so a running task doesn't recompute elapsed from before the reset
+    smallCount = 0;  // small-cycle count toward next big-cycle trigger resets daily
     skippedTasks = [];
     done = done.filter(t => t.type !== 'daily');
     updateStats(); renderSkipped(); renderDone();
@@ -1500,6 +1518,7 @@ function save() {
     localStorage.setItem('tt_skipped',   JSON.stringify(skippedTasks));
     localStorage.setItem('tt_shelved',   JSON.stringify(shelvedTasks));
     localStorage.setItem('tt_homeTasks',  JSON.stringify(homeTasks));
+    localStorage.setItem('tt_workTasks',  JSON.stringify(workTasks));
     localStorage.setItem('tt_workMode',   workMode ? '1' : '0');
     localStorage.setItem('tt_smallCount', smallCount);
     localStorage.setItem('tt_dayHeld',    JSON.stringify(dayHeldTasks));
@@ -1562,6 +1581,8 @@ function load() {
     if (wm !== null) workMode = wm === '1';
     const ht = localStorage.getItem('tt_homeTasks');
     if (ht) homeTasks = JSON.parse(ht);
+    const wt = localStorage.getItem('tt_workTasks');
+    if (wt) workTasks = JSON.parse(wt);
     const sc = localStorage.getItem('tt_smallCount');
     if (sc) smallCount = parseInt(sc) || 0;
   } catch(_) {}
@@ -1575,6 +1596,7 @@ setInterval(() => {
     totalToday = 0;
     todayAtResume = 0;  // reset so running tick doesn't restore old value
     if (running) recordStart();  // rebase timerStartedAt so a running task doesn't recompute elapsed from before the reset
+    smallCount = 0;  // small-cycle count toward next big-cycle trigger resets daily
     // Restore all skipped cycle tasks back to queue at midnight
     skippedTasks.forEach(({ task: t }) => {
       if (t.type !== 'daily') pushTop(t); // daily tasks re-injected via checkDailyTasks
@@ -1666,7 +1688,14 @@ function saveModal() {
         if (cur && cur.id === task.id) { clearInterval(ticker); running = false; overSecs = 0; cur = null; loadNext(); }
         closeModal(); renderAll(); save(); return;
       }
-      // If tag changed FROM '家' while in work mode, nothing to do (task stays in queue)
+      // If tag changed to '工作' while in home mode, pull out of queue
+      if (modalTag === '工作' && !workMode && oldTag !== '工作') {
+        tasks = tasks.filter(t => t.id !== task.id);
+        workTasks.push(task);
+        if (cur && cur.id === task.id) { clearInterval(ticker); running = false; overSecs = 0; cur = null; loadNext(); }
+        closeModal(); renderAll(); save(); return;
+      }
+      // If tag changed FROM '家' or '工作', nothing to do (task stays in queue)
     }
     const oldType = task.type;
     const newType = (editingSrc === 'queue' || editingSrc === 'done') ? modalType : oldType;
@@ -1787,7 +1816,7 @@ function getCloudPayload() {
     totalToday, totalTodayDate: todayStr(),
     coins, coinsToday, coinsTodayDate: todayStr(), coinsTs,
     skippedTasks, shelvedTasks,
-    homeTasks, workMode, smallCount,
+    homeTasks, workTasks, workMode, smallCount,
     left, total, curId: cur ? cur.id : -1,
     savedDate: todayStr()
   });
@@ -1816,6 +1845,7 @@ function applyCloudPayload(raw) {
     if (d.skippedTasks !== undefined && (d.totalTodayDate || d.savedDate) === todayStr()) skippedTasks = d.skippedTasks;
     if (d.shelvedTasks !== undefined) shelvedTasks = d.shelvedTasks;
     if (d.homeTasks  !== undefined) homeTasks    = d.homeTasks;
+    if (d.workTasks  !== undefined) workTasks    = d.workTasks;
     if (d.workMode   !== undefined) workMode     = d.workMode;
     if (d.smallCount !== undefined) smallCount   = d.smallCount;
     if (d.left       !== undefined) _savedLeft   = d.left;
@@ -2003,6 +2033,7 @@ initCloud();
       <div class="type-toggle" id="modalTagToggle">
         <button class="type-btn" data-tag="" onclick="setModalTag('')">无</button>
         <button class="type-btn" data-tag="家" onclick="setModalTag('家')">🏠 家</button>
+        <button class="type-btn" data-tag="工作" onclick="setModalTag('工作')">💼 工作</button>
       </div>
     </div>
     <div class="fg" id="modalTrigRow" style="display:none">

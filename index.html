@@ -536,6 +536,7 @@ let totalAllTime  = 0;
 let totalToday    = 0;
 let coins         = 0;
 let coinsToday    = 0;
+let coinsTs       = 0;   // ms timestamp of last local coins change; guards against stale cloud pulls overwriting a fresher local deduction
 let spendingCoins = false;
 let spendInterval = null;
 let spendStartAt  = null;
@@ -888,7 +889,7 @@ function doComplete() {
     ? Math.min(totalAllTime - totalAtResume, t.duration * 2)
     : Math.min(t.duration, t.duration);
   const earned = Math.max(1, Math.round(earnedSecs / 60));
-  coins += earned; coinsToday += earned;
+  coins += earned; coinsToday += earned; coinsTs = Date.now();
 
   if (t.type === 'once') {
     t.count = 1;
@@ -1159,6 +1160,7 @@ function spendTick() {
       coins--; coinsToday = Math.max(0, coinsToday - 1);
     }
     spendDeducted = elapsedMin;
+    coinsTs = Date.now();
     save();
   }
   if (coins <= 0) {
@@ -1424,6 +1426,7 @@ function save() {
     localStorage.setItem('tt_coins',        coins);
     localStorage.setItem('tt_coinsToday',   coinsToday);
     localStorage.setItem('tt_coinsTodayDate', todayStr());
+    localStorage.setItem('tt_coinsTs',      coinsTs);
     localStorage.setItem('tt_spending',     spendingCoins ? '1' : '0');
     localStorage.setItem('tt_spendStartAt', spendStartAt || '');
     localStorage.setItem('tt_skipped',   JSON.stringify(skippedTasks));
@@ -1468,6 +1471,8 @@ function load() {
     const cotd = localStorage.getItem('tt_coinsTodayDate');
     if (co) coins = parseInt(co) || 0;
     if (cot && cotd === todayStr()) coinsToday = parseInt(cot) || 0;
+    const cts = localStorage.getItem('tt_coinsTs');
+    if (cts) coinsTs = parseInt(cts) || 0;
     const sp  = localStorage.getItem('tt_spending');
     const spa = localStorage.getItem('tt_spendStartAt');
     if (sp === '1' && spa) { spendingCoins = true; spendStartAt = parseInt(spa) || null; }
@@ -1706,7 +1711,7 @@ function getCloudPayload() {
     tasks, bigTasks, dailyDefs, done, uid,
     totalAllTime,
     totalToday, totalTodayDate: todayStr(),
-    coins, coinsToday, coinsTodayDate: todayStr(),
+    coins, coinsToday, coinsTodayDate: todayStr(), coinsTs,
     skippedTasks, shelvedTasks,
     homeTasks, workMode, smallCount,
     left, total, curId: cur ? cur.id : -1,
@@ -1726,8 +1731,14 @@ function applyCloudPayload(raw) {
     if (d.totalToday !== undefined && (d.totalTodayDate || d.savedDate) === todayStr()) {
       totalToday = d.totalToday > 86400 ? 0 : d.totalToday;
     }
-    if (d.coins !== undefined) coins = d.coins;
-    if (d.coinsToday !== undefined && (d.coinsTodayDate || d.savedDate) === todayStr()) coinsToday = d.coinsToday;
+    // Only accept cloud coins if they're actually newer than our last local change —
+    // otherwise a stale gist (e.g. pulled right after a phone was backgrounded for
+    // hours mid-spend) would clobber a correct local deduction.
+    if ((d.coinsTs || 0) > coinsTs) {
+      if (d.coins !== undefined) coins = d.coins;
+      if (d.coinsToday !== undefined && (d.coinsTodayDate || d.savedDate) === todayStr()) coinsToday = d.coinsToday;
+      coinsTs = d.coinsTs || coinsTs;
+    }
     if (d.skippedTasks !== undefined && (d.totalTodayDate || d.savedDate) === todayStr()) skippedTasks = d.skippedTasks;
     if (d.shelvedTasks !== undefined) shelvedTasks = d.shelvedTasks;
     if (d.homeTasks  !== undefined) homeTasks    = d.homeTasks;

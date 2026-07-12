@@ -912,6 +912,7 @@ document.addEventListener('visibilitychange', () => {
     lastDay = today;
     totalToday = 0;
     todayAtResume = 0;  // reset so running tick doesn't restore old value
+    if (running) recordStart();  // rebase timerStartedAt so a running task doesn't recompute elapsed from before the reset
     skippedTasks = [];
     done = done.filter(t => t.type !== 'daily');
     updateStats(); renderSkipped(); renderDone();
@@ -1192,6 +1193,7 @@ function updateStats() {
 function resetToday() {
   if (!confirm('把今日已用归零？')) return;
   totalToday = 0; todayAtResume = 0;
+  if (running) recordStart();  // rebase timerStartedAt so a running task doesn't recompute elapsed from before the reset
   updateStats(); save();
 }
 function toggleSpendCoins() {
@@ -1572,6 +1574,7 @@ setInterval(() => {
     lastDay = today;
     totalToday = 0;
     todayAtResume = 0;  // reset so running tick doesn't restore old value
+    if (running) recordStart();  // rebase timerStartedAt so a running task doesn't recompute elapsed from before the reset
     // Restore all skipped cycle tasks back to queue at midnight
     skippedTasks.forEach(({ task: t }) => {
       if (t.type !== 'daily') pushTop(t); // daily tasks re-injected via checkDailyTasks

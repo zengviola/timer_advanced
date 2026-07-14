@@ -1302,8 +1302,8 @@ function renderTimer() {
   prog.style.stroke = tc(cur.type);
   btnSP.style.background = tc(cur.type);
 
-  const loop = (cur.type === 'small' || cur.type === 'big') && cur.count > 0
-    ? `<span class="pill">${tn(cur.type)} ×${cur.count}</span>` : '';
+  const loop = (cur.type === 'small' || cur.type === 'big') && cur.dayCountDate === todayStr() && cur.dayCount > 0
+    ? `<span class="pill">${tn(cur.type)} ×${cur.dayCount}</span>` : '';
   const dailyCount = cur.type === 'daily' && cur.count > 0
     ? `<span class="pill">连续 ${cur.count} 天</span>` : '';
 
@@ -1353,7 +1353,7 @@ function renderQ() {
   if (up.length === 0) { qList.innerHTML = `<div class="empty">队列为空</div>`; return; }
   qList.innerHTML = up.map((t, i) => {
     const mins   = Math.ceil(t.duration / 60);
-    const lp     = (t.type === 'small' || t.type === 'big') && t.count > 0 ? `<span class="pill">×${t.count}</span>` : '';
+    const lp     = (t.type === 'small' || t.type === 'big') && t.dayCountDate === todayStr() && t.dayCount > 0 ? `<span class="pill">×${t.dayCount}</span>` : '';
     const dayP   = t.days && t.days.length > 0 ? `<span class="pill">${fmtDays(t.days)}</span>` : '';
     const topTag = i === 0 ? `<span class="top-tag">Next</span>` : '';
     return `<div class="card c-${t.type}${i === 0 ? ' slide-in' : ''}">

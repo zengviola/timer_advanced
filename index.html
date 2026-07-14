@@ -921,22 +921,32 @@ function tick() {
   updateStats();
 }
 
+// Reset today's stats when the calendar date has changed since we last checked
+// (called on load, on the minute-interval check, and when the tab regains focus —
+// covers both "tab left open across midnight" and "closed and reopened next day")
+function dailyRollover() {
+  lastDay = todayStr();
+  totalToday = 0;
+  todayAtResume = 0;  // reset so running tick doesn't restore old value
+  if (running) recordStart();  // rebase timerStartedAt so a running task doesn't recompute elapsed from before the reset
+  smallCount = 0;  // small-cycle count toward next big-cycle trigger resets daily
+  // Restore all skipped cycle tasks back to queue at midnight
+  skippedTasks.forEach(({ task: t }) => {
+    if (t.type !== 'daily') pushTop(t); // daily tasks re-injected via checkDailyTasks
+  });
+  skippedTasks = [];
+  done = done.filter(t => t.type !== 'daily');
+  updateStats(); renderSkipped(); renderDone();
+  checkDailyTasks();
+  if (!cur) loadNext(); else renderQ();
+  save();
+}
+
 // Sync immediately when tab becomes visible again; also check for day rollover
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return;
-  const today = todayStr();
-  if (today !== lastDay) {
-    lastDay = today;
-    totalToday = 0;
-    todayAtResume = 0;  // reset so running tick doesn't restore old value
-    if (running) recordStart();  // rebase timerStartedAt so a running task doesn't recompute elapsed from before the reset
-    smallCount = 0;  // small-cycle count toward next big-cycle trigger resets daily
-    skippedTasks = [];
-    done = done.filter(t => t.type !== 'daily');
-    updateStats(); renderSkipped(); renderDone();
-    checkDailyTasks();
-    if (!cur) loadNext(); else renderQ();
-    save();
+  if (todayStr() !== lastDay) {
+    dailyRollover();
   }
   if (running) tick();
   if (spendingCoins) spendTick();
@@ -1212,6 +1222,7 @@ function resetToday() {
   if (!confirm('把今日已用归零？')) return;
   totalToday = 0; todayAtResume = 0;
   if (running) recordStart();  // rebase timerStartedAt so a running task doesn't recompute elapsed from before the reset
+  smallCount = 0;  // small-cycle count toward next big-cycle trigger
   updateStats(); save();
 }
 function toggleSpendCoins() {
@@ -1522,6 +1533,7 @@ function save() {
     localStorage.setItem('tt_workMode',   workMode ? '1' : '0');
     localStorage.setItem('tt_smallCount', smallCount);
     localStorage.setItem('tt_dayHeld',    JSON.stringify(dayHeldTasks));
+    localStorage.setItem('tt_lastDay',    lastDay);
   } catch(_) {}
   debouncePush();
 }
@@ -1585,30 +1597,14 @@ function load() {
     if (wt) workTasks = JSON.parse(wt);
     const sc = localStorage.getItem('tt_smallCount');
     if (sc) smallCount = parseInt(sc) || 0;
+    const ld = localStorage.getItem('tt_lastDay');
+    if (ld) lastDay = ld;
   } catch(_) {}
 }
 
 // ── Daily Reset Check (every minute) ──
 setInterval(() => {
-  const today = todayStr();
-  if (today !== lastDay) {
-    lastDay = today;
-    totalToday = 0;
-    todayAtResume = 0;  // reset so running tick doesn't restore old value
-    if (running) recordStart();  // rebase timerStartedAt so a running task doesn't recompute elapsed from before the reset
-    smallCount = 0;  // small-cycle count toward next big-cycle trigger resets daily
-    // Restore all skipped cycle tasks back to queue at midnight
-    skippedTasks.forEach(({ task: t }) => {
-      if (t.type !== 'daily') pushTop(t); // daily tasks re-injected via checkDailyTasks
-    });
-    skippedTasks = [];
-    done = done.filter(t => t.type !== 'daily');
-    updateStats();
-    renderSkipped();
-    renderDone();
-    if (!cur) loadNext();
-    else renderQ();
-  }
+  if (todayStr() !== lastDay) dailyRollover();
   checkDailyTasks();
   checkDayHeld();
 }, 60 * 1000);
@@ -2001,6 +1997,7 @@ function initCloud() {
 
 // ── Init ──
 load();
+if (todayStr() !== lastDay) dailyRollover();  // catch up if the app was closed across midnight
 renderContext();
 checkDailyTasks();
 checkDayHeld();

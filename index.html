@@ -596,10 +596,20 @@ let _savedCurId   = null;
 let skippedTasks  = [];  // { task, skippedDate } for small/big cycle skipped today
 let shelvedTasks  = [];  // tasks shelved indefinitely until manually restored
 let smallCount    = 0;   // cumulative small-cycle completions (drives big-cycle triggers)
-let workMode      = true;  // true = 在公司, false = 不在公司
-let homeTasks     = [];    // 家_上班/家_下班-tagged tasks held aside while in work mode
-let workTasks     = [];    // 工作-tagged tasks held aside while in home mode
-function isHomeTag(tag) { return tag === '家_上班' || tag === '家_下班'; }
+let locState      = 'work'; // 'home_before' | 'work' | 'home_after' — current location
+let heldTasks     = [];    // tasks pulled out of the queue because their tag doesn't match locState
+const LOC_ORDER = ['home_before', 'work', 'home_after'];
+const LOC_LABEL = { home_before: '家 · 上班前', work: '公司', home_after: '家 · 下班后' };
+const LOC_SUB   = { home_before: '其他任务已隐藏', work: '家庭任务已隐藏', home_after: '其他任务已隐藏' };
+const LOC_COLOR = { home_before: 'var(--small)', work: 'var(--once)', home_after: 'var(--small)' };
+// Which tag (if any) stays visible in a given location; tasks with any other tag are held aside.
+function tagVisible(tag, state) {
+  if (!tag) return true;
+  if (state === 'home_before') return tag === '家_上班';
+  if (state === 'work')        return tag === '工作';
+  if (state === 'home_after')  return tag === '家_下班';
+  return true;
+}
 let selTag        = '';    // selected tag in add form
 let selDays       = [];    // selected days for add form ([] = every day)
 let dayHeldTasks  = [];    // tasks held because today isn't their day
@@ -682,43 +692,28 @@ function setSelTag(tag) {
 }
 
 function renderContext() {
-  document.getElementById('statCtx').textContent    = workMode ? '公司' : '家';
-  document.getElementById('statCtxSub').textContent = workMode ? '家庭任务已隐藏' : '工作任务已隐藏';
-  document.getElementById('statCtx').style.color    = workMode ? 'var(--once)' : 'var(--small)';
+  document.getElementById('statCtx').textContent    = LOC_LABEL[locState];
+  document.getElementById('statCtxSub').textContent = LOC_SUB[locState];
+  document.getElementById('statCtx').style.color    = LOC_COLOR[locState];
 }
 
 function toggleContext() {
-  workMode = !workMode;
-  if (workMode) {
-    // Moving to work mode: pull 家_上班/家_下班-tagged tasks out of active queue
-    const pulled = tasks.filter(t => isHomeTag(t.tag));
-    tasks = tasks.filter(t => !isHomeTag(t.tag));
-    homeTasks.push(...pulled);
-    // Restore held 工作-tagged tasks to top of queue
-    workTasks.forEach(t => pushTop(t));
-    workTasks = [];
-    // If current task is home-tagged, stop and reload
-    if (cur && isHomeTag(cur.tag)) {
-      clearInterval(ticker); running = false; overSecs = 0;
-      cur = null;
-      loadNext();
-    } else renderQ();
-  } else {
-    // Moving to home mode: restore held home tasks to top of queue
-    homeTasks.forEach(t => pushTop(t));
-    homeTasks = [];
-    // Pull 工作-tagged tasks out of active queue
-    const pulled = tasks.filter(t => t.tag === '工作');
-    tasks = tasks.filter(t => t.tag !== '工作');
-    workTasks.push(...pulled);
-    // If current task is work-tagged, stop and reload
-    if (cur && cur.tag === '工作') {
-      clearInterval(ticker); running = false; overSecs = 0;
-      cur = null;
-      loadNext();
-    } else if (!cur) loadNext();
-    else renderQ();
-  }
+  locState = LOC_ORDER[(LOC_ORDER.indexOf(locState) + 1) % LOC_ORDER.length];
+  // Pull tasks whose tag no longer matches this location out of the active queue
+  const stillVisible = [];
+  tasks.forEach(t => { if (tagVisible(t.tag, locState)) stillVisible.push(t); else heldTasks.push(t); });
+  tasks = stillVisible;
+  // Restore held tasks that now match this location, to the top of the queue
+  const stillHeld = [];
+  heldTasks.forEach(t => { if (tagVisible(t.tag, locState)) pushTop(t); else stillHeld.push(t); });
+  heldTasks = stillHeld;
+  // If current task no longer belongs here, stop and reload
+  if (cur && !tagVisible(cur.tag, locState)) {
+    clearInterval(ticker); running = false; overSecs = 0;
+    cur = null;
+    loadNext();
+  } else if (!cur) loadNext();
+  else renderQ();
   renderContext();
   save();
 }
@@ -747,12 +742,9 @@ function addTask() {
     const newTask = { id: uid++, name, duration: mins * 60, type: selType, count: 0 };
     if (selTag) newTask.tag = selTag;
     if (selDays.length > 0) newTask.days = selDays.slice();
-    // If home-tagged task added while in work mode, hold it aside
-    if (isHomeTag(newTask.tag) && workMode) {
-      homeTasks.push(newTask);
-    // If work-tagged task added while in home mode, hold it aside
-    } else if (newTask.tag === '工作' && !workMode) {
-      workTasks.push(newTask);
+    // If tagged task added while its tag doesn't match current location, hold it aside
+    if (newTask.tag && !tagVisible(newTask.tag, locState)) {
+      heldTasks.push(newTask);
     } else if (!taskActiveToday(newTask)) {
       dayHeldTasks.push(newTask);
     } else {
@@ -1532,9 +1524,8 @@ function save() {
     localStorage.setItem('tt_spendStartCoins', spendStartCoins);
     localStorage.setItem('tt_skipped',   JSON.stringify(skippedTasks));
     localStorage.setItem('tt_shelved',   JSON.stringify(shelvedTasks));
-    localStorage.setItem('tt_homeTasks',  JSON.stringify(homeTasks));
-    localStorage.setItem('tt_workTasks',  JSON.stringify(workTasks));
-    localStorage.setItem('tt_workMode',   workMode ? '1' : '0');
+    localStorage.setItem('tt_heldTasks',  JSON.stringify(heldTasks));
+    localStorage.setItem('tt_locState',   locState);
     localStorage.setItem('tt_smallCount', smallCount);
     localStorage.setItem('tt_dayHeld',    JSON.stringify(dayHeldTasks));
     localStorage.setItem('tt_lastDay',    lastDay);
@@ -1593,12 +1584,20 @@ function load() {
     if (l)  _savedLeft  = parseInt(l);
     if (tot)_savedTotal = parseInt(tot);
     if (ci) _savedCurId = parseInt(ci);
-    const wm = localStorage.getItem('tt_workMode');
-    if (wm !== null) workMode = wm === '1';
-    const ht = localStorage.getItem('tt_homeTasks');
-    if (ht) homeTasks = JSON.parse(ht);
-    const wt = localStorage.getItem('tt_workTasks');
-    if (wt) workTasks = JSON.parse(wt);
+    const ls = localStorage.getItem('tt_locState');
+    if (ls) {
+      locState = ls;
+      const held = localStorage.getItem('tt_heldTasks');
+      if (held) heldTasks = JSON.parse(held);
+    } else {
+      // Migrate from old two-state (workMode/homeTasks/workTasks) layout
+      const wm = localStorage.getItem('tt_workMode');
+      if (wm !== null) locState = wm === '1' ? 'work' : 'home_before';
+      const ht = localStorage.getItem('tt_homeTasks');
+      if (ht) heldTasks.push(...JSON.parse(ht));
+      const wt = localStorage.getItem('tt_workTasks');
+      if (wt) heldTasks.push(...JSON.parse(wt));
+    }
     const sc = localStorage.getItem('tt_smallCount');
     if (sc) smallCount = parseInt(sc) || 0;
     const ld = localStorage.getItem('tt_lastDay');
@@ -1678,24 +1677,16 @@ function saveModal() {
     }
     // Apply tag change
     if (editingSrc === 'queue') {
-      const oldTag = task.tag || '';
       task.tag = modalTag || undefined;
       if (!task.tag) delete task.tag;
-      // If tag changed to 家_上班/家_下班 while in work mode, pull out of queue
-      if (isHomeTag(modalTag) && workMode && !isHomeTag(oldTag)) {
+      // If new tag no longer matches current location, pull out of queue
+      if (task.tag && !tagVisible(task.tag, locState)) {
         tasks = tasks.filter(t => t.id !== task.id);
-        homeTasks.push(task);
+        heldTasks.push(task);
         if (cur && cur.id === task.id) { clearInterval(ticker); running = false; overSecs = 0; cur = null; loadNext(); }
         closeModal(); renderAll(); save(); return;
       }
-      // If tag changed to '工作' while in home mode, pull out of queue
-      if (modalTag === '工作' && !workMode && oldTag !== '工作') {
-        tasks = tasks.filter(t => t.id !== task.id);
-        workTasks.push(task);
-        if (cur && cur.id === task.id) { clearInterval(ticker); running = false; overSecs = 0; cur = null; loadNext(); }
-        closeModal(); renderAll(); save(); return;
-      }
-      // If tag changed away from a home tag or '工作', nothing to do (task stays in queue)
+      // If new tag matches (or has no tag), nothing to do here (task stays in queue)
     }
     const oldType = task.type;
     const newType = (editingSrc === 'queue' || editingSrc === 'done') ? modalType : oldType;
@@ -1816,7 +1807,7 @@ function getCloudPayload() {
     totalToday, totalTodayDate: todayStr(),
     coins, coinsToday, coinsTodayDate: todayStr(), coinsTs,
     skippedTasks, shelvedTasks,
-    homeTasks, workTasks, workMode, smallCount,
+    heldTasks, locState, smallCount,
     left, total, curId: cur ? cur.id : -1,
     savedDate: todayStr()
   });
@@ -1844,9 +1835,14 @@ function applyCloudPayload(raw) {
     }
     if (d.skippedTasks !== undefined && (d.totalTodayDate || d.savedDate) === todayStr()) skippedTasks = d.skippedTasks;
     if (d.shelvedTasks !== undefined) shelvedTasks = d.shelvedTasks;
-    if (d.homeTasks  !== undefined) homeTasks    = d.homeTasks;
-    if (d.workTasks  !== undefined) workTasks    = d.workTasks;
-    if (d.workMode   !== undefined) workMode     = d.workMode;
+    if (d.heldTasks  !== undefined) {
+      heldTasks = d.heldTasks;
+    } else if (d.homeTasks !== undefined || d.workTasks !== undefined) {
+      // Legacy cloud payload from before the 3-state location split
+      heldTasks = [...(d.homeTasks || []), ...(d.workTasks || [])];
+    }
+    if (d.locState   !== undefined) locState     = d.locState;
+    else if (d.workMode !== undefined) locState  = d.workMode ? 'work' : 'home_before';
     if (d.smallCount !== undefined) smallCount   = d.smallCount;
     if (d.left       !== undefined) _savedLeft   = d.left;
     if (d.total      !== undefined) _savedTotal  = d.total;

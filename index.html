@@ -361,17 +361,17 @@
 
   <!-- Stats Bar -->
   <div class="stats-bar">
-    <div class="stat-card">
+    <div class="stat-card" style="flex:1.5">
       <div class="stat-label">当前季节</div>
       <div class="stat-value" id="statSeason" style="font-size:1.1rem">冬</div>
-      <div class="stat-sub" id="statSeasonSub">距离春天还有 X 天</div>
+      <div class="stat-sub" id="statSeasonSub" style="white-space:nowrap">距离春天还有 X 天</div>
     </div>
     <div class="stat-card" id="ctxCard" style="cursor:pointer;user-select:none" onclick="toggleContext()" title="切换位置">
       <div class="stat-label">当前位置</div>
       <div class="stat-value" id="statCtx" style="font-size:0.9rem">公司</div>
       <div class="stat-sub"  id="statCtxSub">家庭任务已隐藏</div>
     </div>
-    <div class="stat-card" id="waterCard" style="display:none">
+    <div class="stat-card" id="waterCard" style="display:none;flex:0.6">
       <div class="stat-label">💧 喝水</div>
       <div class="stat-value" id="statWater" style="font-size:1.1rem">0</div>
       <div class="stat-sub"  id="statWaterSub">杯</div>

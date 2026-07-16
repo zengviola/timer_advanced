@@ -1664,6 +1664,7 @@ let editingId  = null;
 let editingSrc = null;
 let modalType  = null;
 let modalTags  = [];
+let modalDays  = [];
 
 function findTask(id, src) {
   if (src === 'queue') return tasks.find(t => t.id === id);
@@ -1671,6 +1672,15 @@ function findTask(id, src) {
   if (src === 'daily') return dailyDefs.find(d => d.id === id);
   if (src === 'done')  return done.find(t => t.id === id);
   return null;
+}
+
+// Daily tasks keep their day-restriction on the def (dailyDefs), not on the queue/done instance —
+// so editing a queued/done daily task's days must redirect to its linked def.
+function daysTarget(task) {
+  if (task && task.type === 'daily' && task.dailyId !== undefined) {
+    return dailyDefs.find(d => d.id === task.dailyId) || task;
+  }
+  return task;
 }
 
 function setModalType(type) {
@@ -1700,6 +1710,19 @@ function setModalTags(tags) {
     x.className = 'type-btn' + (on ? ' on on-once' : '');
   });
 }
+function toggleModalDay(d) {
+  const i = modalDays.indexOf(d);
+  if (i >= 0) modalDays.splice(i, 1); else modalDays.push(d);
+  document.querySelectorAll('#modalDayToggle .day-btn').forEach(b => {
+    b.classList.toggle('on', modalDays.includes(parseInt(b.dataset.d)));
+  });
+}
+function setModalDays(days) {
+  modalDays = days ? days.slice() : [];
+  document.querySelectorAll('#modalDayToggle .day-btn').forEach(b => {
+    b.classList.toggle('on', modalDays.includes(parseInt(b.dataset.d)));
+  });
+}
 
 function openEditModal(id, src) {
   const task = findTask(id, src);
@@ -1715,6 +1738,7 @@ function openEditModal(id, src) {
   typeRow.style.display = (src === 'queue' || src === 'done') ? 'flex' : 'none';
   setModalType(task.type);
   setModalTags(task.tags);
+  setModalDays(daysTarget(task).days);
   const trigN = document.getElementById('modalTrigN');
   if (trigN) trigN.value = isNaN(task.trigEvery) ? 20 : (task.trigEvery || 20);
   document.getElementById('editModal').style.display = 'flex';
@@ -1734,6 +1758,11 @@ function saveModal() {
     if (task.type === 'big' || modalType === 'big') {
       const trigN = document.getElementById('modalTrigN');
       if (trigN) task.trigEvery = Math.max(1, parseInt(trigN.value) || 20);
+    }
+    // Apply day-restriction change (redirects to the linked daily def when needed)
+    const dTask = daysTarget(task);
+    if (dTask) {
+      if (modalDays.length > 0) dTask.days = modalDays.slice(); else delete dTask.days;
     }
     // Apply tag change
     if (editingSrc === 'queue') {
@@ -1777,6 +1806,7 @@ function saveModal() {
           id: uid++, name: task.name, duration: secs, type: 'daily',
           count: task.count || 0, lastCompleted: null
         };
+        if (task.days) def.days = task.days.slice();
         dailyDefs.push(def);
         task.dailyId = def.id;
         renderDaily();
@@ -1813,6 +1843,7 @@ function closeModal() {
   document.getElementById('editModal').style.display = 'none';
   editingId = editingSrc = modalType = null;
   modalTags = [];
+  modalDays = [];
 }
 
 // ── Cloud Sync (GitHub Gist) ──
@@ -2094,6 +2125,18 @@ initCloud();
         <button class="type-btn" data-tag="家_上班" onclick="toggleModalTag('家_上班')">🏠 家_上班</button>
         <button class="type-btn" data-tag="家_下班" onclick="toggleModalTag('家_下班')">🏠 家_下班</button>
         <button class="type-btn" data-tag="工作" onclick="toggleModalTag('工作')">💼 工作</button>
+      </div>
+    </div>
+    <div class="fg">
+      <label class="fl">出现的日子 <span style="color:var(--surf3);font-weight:400;text-transform:none">(不选 = 每天)</span></label>
+      <div style="display:flex;border-radius:8px;overflow:hidden;background:var(--surf2)" id="modalDayToggle">
+        <button class="day-btn" data-d="1" onclick="toggleModalDay(1)">一</button>
+        <button class="day-btn" data-d="2" onclick="toggleModalDay(2)">二</button>
+        <button class="day-btn" data-d="3" onclick="toggleModalDay(3)">三</button>
+        <button class="day-btn" data-d="4" onclick="toggleModalDay(4)">四</button>
+        <button class="day-btn" data-d="5" onclick="toggleModalDay(5)">五</button>
+        <button class="day-btn" data-d="6" onclick="toggleModalDay(6)">六</button>
+        <button class="day-btn" data-d="0" onclick="toggleModalDay(0)">日</button>
       </div>
     </div>
     <div class="fg" id="modalTrigRow" style="display:none">

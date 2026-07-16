@@ -529,10 +529,10 @@
       <div class="fg">
         <label class="fl">标签</label>
         <div class="type-toggle" id="tagToggle">
-          <button class="type-btn on on-once" data-tag="" onclick="setSelTag('')">无</button>
-          <button class="type-btn"            data-tag="家_上班" onclick="setSelTag('家_上班')">🏠 家_上班</button>
-          <button class="type-btn"            data-tag="家_下班" onclick="setSelTag('家_下班')">🏠 家_下班</button>
-          <button class="type-btn"            data-tag="工作" onclick="setSelTag('工作')">💼 工作</button>
+          <button class="type-btn on on-once" data-tag="" onclick="toggleSelTag('')">无</button>
+          <button class="type-btn"            data-tag="家_上班" onclick="toggleSelTag('家_上班')">🏠 家_上班</button>
+          <button class="type-btn"            data-tag="家_下班" onclick="toggleSelTag('家_下班')">🏠 家_下班</button>
+          <button class="type-btn"            data-tag="工作" onclick="toggleSelTag('工作')">💼 工作</button>
         </div>
       </div>
     </div>
@@ -618,7 +618,16 @@ function tagVisible(tag, state) {
   if (state === 'home_after')  return tag === '家_下班';
   return true;
 }
-let selTag        = '';    // selected tag in add form
+// A task can carry several tags at once; it's visible if it has none, or if any one of them matches.
+function tagsVisible(tags, state) {
+  if (!tags || tags.length === 0) return true;
+  return tags.some(tag => tagVisible(tag, state));
+}
+function tagPills(tags) {
+  if (!tags || tags.length === 0) return '';
+  return tags.map(t => `<span class="pill" style="background:var(--surf3)">🏠 ${esc(t)}</span>`).join('');
+}
+let selTags       = [];    // selected tags in add form (multi-select)
 let selDays       = [];    // selected days for add form ([] = every day)
 let dayHeldTasks  = [];    // tasks held because today isn't their day
 
@@ -692,10 +701,16 @@ btnAdd.addEventListener('click', addTask);
 btnCutIn.addEventListener('click', cutIn);
 iName.addEventListener('keydown', e => { if (e.key === 'Enter') addTask(); });
 
-function setSelTag(tag) {
-  selTag = tag;
+function toggleSelTag(tag) {
+  if (tag === '') {
+    selTags = [];
+  } else {
+    const i = selTags.indexOf(tag);
+    if (i >= 0) selTags.splice(i, 1); else selTags.push(tag);
+  }
   document.querySelectorAll('#tagToggle .type-btn').forEach(b => {
-    b.className = 'type-btn' + (b.dataset.tag === tag ? ' on on-once' : '');
+    const on = b.dataset.tag === '' ? selTags.length === 0 : selTags.includes(b.dataset.tag);
+    b.className = 'type-btn' + (on ? ' on on-once' : '');
   });
 }
 
@@ -718,16 +733,16 @@ function renderSeason() {
 
 function toggleContext() {
   locState = LOC_ORDER[(LOC_ORDER.indexOf(locState) + 1) % LOC_ORDER.length];
-  // Pull tasks whose tag no longer matches this location out of the active queue
+  // Pull tasks whose tags no longer match this location out of the active queue
   const stillVisible = [];
-  tasks.forEach(t => { if (tagVisible(t.tag, locState)) stillVisible.push(t); else heldTasks.push(t); });
+  tasks.forEach(t => { if (tagsVisible(t.tags, locState)) stillVisible.push(t); else heldTasks.push(t); });
   tasks = stillVisible;
   // Restore held tasks that now match this location, to the top of the queue
   const stillHeld = [];
-  heldTasks.forEach(t => { if (tagVisible(t.tag, locState)) pushTop(t); else stillHeld.push(t); });
+  heldTasks.forEach(t => { if (tagsVisible(t.tags, locState)) pushTop(t); else stillHeld.push(t); });
   heldTasks = stillHeld;
   // If current task no longer belongs here, stop and reload
-  if (cur && !tagVisible(cur.tag, locState)) {
+  if (cur && !tagsVisible(cur.tags, locState)) {
     clearInterval(ticker); running = false; overSecs = 0;
     cur = null;
     loadNext();
@@ -759,10 +774,10 @@ function addTask() {
 
   } else {
     const newTask = { id: uid++, name, duration: mins * 60, type: selType, count: 0 };
-    if (selTag) newTask.tag = selTag;
+    if (selTags.length > 0) newTask.tags = selTags.slice();
     if (selDays.length > 0) newTask.days = selDays.slice();
-    // If tagged task added while its tag doesn't match current location, hold it aside
-    if (newTask.tag && !tagVisible(newTask.tag, locState)) {
+    // If tagged task added while its tags don't match current location, hold it aside
+    if (newTask.tags && !tagsVisible(newTask.tags, locState)) {
       heldTasks.push(newTask);
     } else if (!taskActiveToday(newTask)) {
       dayHeldTasks.push(newTask);
@@ -785,7 +800,7 @@ function cutIn() {
   if (selType === 'daily') { addTask(); return; }
   const mins = Math.max(1, parseInt(iDur.value) || 5);
   const newTask = { id: uid++, name, duration: mins * 60, type: selType, count: 0 };
-  if (selTag) newTask.tag = selTag;
+  if (selTags.length > 0) newTask.tags = selTags.slice();
   // Big cycle cut-in: carry trigger info so it returns to dormant correctly after completion
   if (selType === 'big') {
     const nEl = document.getElementById('iTriN');
@@ -1079,7 +1094,7 @@ function renderShelved() {
   shelvedList.innerHTML = shelvedTasks.map(t => {
     const mins = Math.ceil(t.duration / 60);
     const lp   = t.count > 0 ? `<span class="pill">×${t.count}</span>` : '';
-    const tagP = t.tag ? `<span class="pill" style="background:var(--surf3)">🏠 ${esc(t.tag)}</span>` : '';
+    const tagP = tagPills(t.tags);
     return `<div class="card c-${t.type}" style="opacity:.6">
       <div class="card-body">
         <div class="card-name">${esc(t.name)}</div>
@@ -1327,7 +1342,7 @@ function renderTimer() {
     <div class="cur-name" style="cursor:pointer" onclick="openEditModal(${cur.id},'queue')" title="点击修改名称/类型/时长">${esc(cur.name)}</div>
     <div class="cur-meta">
       <span class="badge b-${cur.type}" style="cursor:pointer" onclick="openEditModal(${cur.id},'queue')" title="点击修改">${tn(cur.type)}</span>
-      ${cur.tag ? `<span class="pill" style="background:var(--surf3)">🏠 ${esc(cur.tag)}</span>` : ''}
+      ${tagPills(cur.tags)}
       ${loop}${dailyCount}
       <button class="edit-btn" onclick="openEditModal(${cur.id},'queue')" style="font-size:0.8rem">✏ 修改</button>
     </div>
@@ -1378,7 +1393,7 @@ function renderQ() {
         <div class="card-sub">
           <span>${mins} 分钟 <button class="edit-btn" onclick="openEditModal(${t.id},'queue')">✏</button></span>
           <span class="badge b-${t.type}" style="cursor:pointer" onclick="openEditModal(${t.id},'queue')" title="点击修改类型/时长">${tn(t.type)}</span>
-          ${t.tag ? `<span class="pill" style="background:var(--surf3)">🏠 ${esc(t.tag)}</span>` : ''}
+          ${tagPills(t.tags)}
           ${lp}${dayP}${topTag}
         </div>
       </div>
@@ -1447,7 +1462,7 @@ function renderDone() {
   doneSec.style.display = 'flex';
   doneList.innerHTML = done.map(t => {
     const isDaily = t.type === 'daily';
-    const tagPill = t.tag ? `<span class="pill" style="background:var(--surf3)">🏠 ${esc(t.tag)}</span>` : '';
+    const tagPill = tagPills(t.tags);
     return `<div class="card c-${t.type} c-done">
       <div class="card-body">
         <div class="card-name">${esc(t.name)}</div>
@@ -1622,6 +1637,19 @@ function load() {
     const ld = localStorage.getItem('tt_lastDay');
     if (ld) lastDay = ld;
   } catch(_) {}
+  migrateAllTags();
+}
+
+// Migrate tasks saved before tags became multi-select (singular `tag` string -> `tags` array)
+function migrateTaskTags(t) {
+  if (t && t.tag !== undefined) {
+    if (!t.tags) t.tags = [t.tag];
+    delete t.tag;
+  }
+}
+function migrateAllTags() {
+  [tasks, bigTasks, dailyDefs, done, heldTasks, dayHeldTasks, shelvedTasks].forEach(arr => arr.forEach(migrateTaskTags));
+  skippedTasks.forEach(s => migrateTaskTags(s.task));
 }
 
 // ── Daily Reset Check (every minute) ──
@@ -1635,7 +1663,7 @@ setInterval(() => {
 let editingId  = null;
 let editingSrc = null;
 let modalType  = null;
-let modalTag   = '';
+let modalTags  = [];
 
 function findTask(id, src) {
   if (src === 'queue') return tasks.find(t => t.id === id);
@@ -1653,10 +1681,23 @@ function setModalType(type) {
   const trigRow = document.getElementById('modalTrigRow');
   if (trigRow) trigRow.style.display = type === 'big' ? 'flex' : 'none';
 }
-function setModalTag(tag) {
-  modalTag = tag;
+function toggleModalTag(tag) {
+  if (tag === '') {
+    modalTags = [];
+  } else {
+    const i = modalTags.indexOf(tag);
+    if (i >= 0) modalTags.splice(i, 1); else modalTags.push(tag);
+  }
   document.querySelectorAll('#modalTagToggle .type-btn').forEach(x => {
-    x.className = 'type-btn' + (x.dataset.tag === tag ? ' on on-once' : '');
+    const on = x.dataset.tag === '' ? modalTags.length === 0 : modalTags.includes(x.dataset.tag);
+    x.className = 'type-btn' + (on ? ' on on-once' : '');
+  });
+}
+function setModalTags(tags) {
+  modalTags = tags ? tags.slice() : [];
+  document.querySelectorAll('#modalTagToggle .type-btn').forEach(x => {
+    const on = x.dataset.tag === '' ? modalTags.length === 0 : modalTags.includes(x.dataset.tag);
+    x.className = 'type-btn' + (on ? ' on on-once' : '');
   });
 }
 
@@ -1673,7 +1714,7 @@ function openEditModal(id, src) {
   const typeRow = document.getElementById('modalTypeRow');
   typeRow.style.display = (src === 'queue' || src === 'done') ? 'flex' : 'none';
   setModalType(task.type);
-  setModalTag(task.tag || '');
+  setModalTags(task.tags);
   const trigN = document.getElementById('modalTrigN');
   if (trigN) trigN.value = isNaN(task.trigEvery) ? 20 : (task.trigEvery || 20);
   document.getElementById('editModal').style.display = 'flex';
@@ -1696,10 +1737,10 @@ function saveModal() {
     }
     // Apply tag change
     if (editingSrc === 'queue') {
-      task.tag = modalTag || undefined;
-      if (!task.tag) delete task.tag;
-      // If new tag no longer matches current location, pull out of queue
-      if (task.tag && !tagVisible(task.tag, locState)) {
+      task.tags = modalTags.length > 0 ? modalTags.slice() : undefined;
+      if (!task.tags) delete task.tags;
+      // If new tags no longer match current location, pull out of queue
+      if (task.tags && !tagsVisible(task.tags, locState)) {
         tasks = tasks.filter(t => t.id !== task.id);
         heldTasks.push(task);
         if (cur && cur.id === task.id) { clearInterval(ticker); running = false; overSecs = 0; cur = null; loadNext(); }
@@ -1771,7 +1812,7 @@ function saveModal() {
 function closeModal() {
   document.getElementById('editModal').style.display = 'none';
   editingId = editingSrc = modalType = null;
-  modalTag = '';
+  modalTags = [];
 }
 
 // ── Cloud Sync (GitHub Gist) ──
@@ -1866,6 +1907,7 @@ function applyCloudPayload(raw) {
     if (d.left       !== undefined) _savedLeft   = d.left;
     if (d.total      !== undefined) _savedTotal  = d.total;
     if (d.curId      !== undefined) _savedCurId  = d.curId;
+    migrateAllTags();
     renderContext();
     checkDailyTasks();
     if (tasks.length > 0) loadNext();
@@ -2048,10 +2090,10 @@ initCloud();
     <div class="fg">
       <label class="fl">标签</label>
       <div class="type-toggle" id="modalTagToggle">
-        <button class="type-btn" data-tag="" onclick="setModalTag('')">无</button>
-        <button class="type-btn" data-tag="家_上班" onclick="setModalTag('家_上班')">🏠 家_上班</button>
-        <button class="type-btn" data-tag="家_下班" onclick="setModalTag('家_下班')">🏠 家_下班</button>
-        <button class="type-btn" data-tag="工作" onclick="setModalTag('工作')">💼 工作</button>
+        <button class="type-btn" data-tag="" onclick="toggleModalTag('')">无</button>
+        <button class="type-btn" data-tag="家_上班" onclick="toggleModalTag('家_上班')">🏠 家_上班</button>
+        <button class="type-btn" data-tag="家_下班" onclick="toggleModalTag('家_下班')">🏠 家_下班</button>
+        <button class="type-btn" data-tag="工作" onclick="toggleModalTag('工作')">💼 工作</button>
       </div>
     </div>
     <div class="fg" id="modalTrigRow" style="display:none">

@@ -520,7 +520,8 @@
         <label class="fl">标签</label>
         <div class="type-toggle" id="tagToggle">
           <button class="type-btn on on-once" data-tag="" onclick="setSelTag('')">无</button>
-          <button class="type-btn"            data-tag="家" onclick="setSelTag('家')">🏠 家</button>
+          <button class="type-btn"            data-tag="家_上班" onclick="setSelTag('家_上班')">🏠 家_上班</button>
+          <button class="type-btn"            data-tag="家_下班" onclick="setSelTag('家_下班')">🏠 家_下班</button>
           <button class="type-btn"            data-tag="工作" onclick="setSelTag('工作')">💼 工作</button>
         </div>
       </div>
@@ -594,8 +595,9 @@ let skippedTasks  = [];  // { task, skippedDate } for small/big cycle skipped to
 let shelvedTasks  = [];  // tasks shelved indefinitely until manually restored
 let smallCount    = 0;   // cumulative small-cycle completions (drives big-cycle triggers)
 let workMode      = true;  // true = 在公司, false = 不在公司
-let homeTasks     = [];    // 家-tagged tasks held aside while in work mode
+let homeTasks     = [];    // 家_上班/家_下班-tagged tasks held aside while in work mode
 let workTasks     = [];    // 工作-tagged tasks held aside while in home mode
+function isHomeTag(tag) { return tag === '家_上班' || tag === '家_下班'; }
 let selTag        = '';    // selected tag in add form
 let selDays       = [];    // selected days for add form ([] = every day)
 let dayHeldTasks  = [];    // tasks held because today isn't their day
@@ -686,15 +688,15 @@ function renderContext() {
 function toggleContext() {
   workMode = !workMode;
   if (workMode) {
-    // Moving to work mode: pull 家-tagged tasks out of active queue
-    const pulled = tasks.filter(t => t.tag === '家');
-    tasks = tasks.filter(t => t.tag !== '家');
+    // Moving to work mode: pull 家_上班/家_下班-tagged tasks out of active queue
+    const pulled = tasks.filter(t => isHomeTag(t.tag));
+    tasks = tasks.filter(t => !isHomeTag(t.tag));
     homeTasks.push(...pulled);
     // Restore held 工作-tagged tasks to top of queue
     workTasks.forEach(t => pushTop(t));
     workTasks = [];
     // If current task is home-tagged, stop and reload
-    if (cur && cur.tag === '家') {
+    if (cur && isHomeTag(cur.tag)) {
       clearInterval(ticker); running = false; overSecs = 0;
       cur = null;
       loadNext();
@@ -744,7 +746,7 @@ function addTask() {
     if (selTag) newTask.tag = selTag;
     if (selDays.length > 0) newTask.days = selDays.slice();
     // If home-tagged task added while in work mode, hold it aside
-    if (newTask.tag === '家' && workMode) {
+    if (isHomeTag(newTask.tag) && workMode) {
       homeTasks.push(newTask);
     // If work-tagged task added while in home mode, hold it aside
     } else if (newTask.tag === '工作' && !workMode) {
@@ -1677,8 +1679,8 @@ function saveModal() {
       const oldTag = task.tag || '';
       task.tag = modalTag || undefined;
       if (!task.tag) delete task.tag;
-      // If tag changed to '家' while in work mode, pull out of queue
-      if (modalTag === '家' && workMode && oldTag !== '家') {
+      // If tag changed to 家_上班/家_下班 while in work mode, pull out of queue
+      if (isHomeTag(modalTag) && workMode && !isHomeTag(oldTag)) {
         tasks = tasks.filter(t => t.id !== task.id);
         homeTasks.push(task);
         if (cur && cur.id === task.id) { clearInterval(ticker); running = false; overSecs = 0; cur = null; loadNext(); }
@@ -1691,7 +1693,7 @@ function saveModal() {
         if (cur && cur.id === task.id) { clearInterval(ticker); running = false; overSecs = 0; cur = null; loadNext(); }
         closeModal(); renderAll(); save(); return;
       }
-      // If tag changed FROM '家' or '工作', nothing to do (task stays in queue)
+      // If tag changed away from a home tag or '工作', nothing to do (task stays in queue)
     }
     const oldType = task.type;
     const newType = (editingSrc === 'queue' || editingSrc === 'done') ? modalType : oldType;
@@ -2029,7 +2031,8 @@ initCloud();
       <label class="fl">标签</label>
       <div class="type-toggle" id="modalTagToggle">
         <button class="type-btn" data-tag="" onclick="setModalTag('')">无</button>
-        <button class="type-btn" data-tag="家" onclick="setModalTag('家')">🏠 家</button>
+        <button class="type-btn" data-tag="家_上班" onclick="setModalTag('家_上班')">🏠 家_上班</button>
+        <button class="type-btn" data-tag="家_下班" onclick="setModalTag('家_下班')">🏠 家_下班</button>
         <button class="type-btn" data-tag="工作" onclick="setModalTag('工作')">💼 工作</button>
       </div>
     </div>

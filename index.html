@@ -731,8 +731,11 @@ function renderSeason() {
   document.getElementById('statSeasonSub').textContent = `距离春天还有 ${daysUntil} 天`;
 }
 
-function toggleContext() {
-  locState = LOC_ORDER[(LOC_ORDER.indexOf(locState) + 1) % LOC_ORDER.length];
+// Re-partition tasks/heldTasks against the current locState. Needed not just on an
+// explicit location toggle but also on load/cloud-sync, so a task that ended up stuck
+// in heldTasks (e.g. an untagged task, which should always be visible) doesn't stay
+// hidden forever just because nothing re-checked it since.
+function reconcileLocVisibility() {
   // Pull tasks whose tags no longer match this location out of the active queue
   const stillVisible = [];
   tasks.forEach(t => { if (tagsVisible(t.tags, locState)) stillVisible.push(t); else heldTasks.push(t); });
@@ -741,6 +744,11 @@ function toggleContext() {
   const stillHeld = [];
   heldTasks.forEach(t => { if (tagsVisible(t.tags, locState)) pushTop(t); else stillHeld.push(t); });
   heldTasks = stillHeld;
+}
+
+function toggleContext() {
+  locState = LOC_ORDER[(LOC_ORDER.indexOf(locState) + 1) % LOC_ORDER.length];
+  reconcileLocVisibility();
   // If current task no longer belongs here, stop and reload
   if (cur && !tagsVisible(cur.tags, locState)) {
     clearInterval(ticker); running = false; overSecs = 0;
@@ -1646,6 +1654,16 @@ function migrateTaskTags(t) {
     if (!t.tags) t.tags = [t.tag];
     delete t.tag;
   }
+  // Even older two-state scheme (workMode on/off) used a bare '家' tag meaning
+  // "hide at work, show at home" — that value never matches the current
+  // 家_上班/家_下班/工作 checks, so it must be translated or the task becomes
+  // invisible in every location. Replace it with both home-side tags to keep
+  // the original meaning (visible home_before and home_after, hidden at work).
+  if (t && t.tags && t.tags.includes('家')) {
+    t.tags = t.tags.filter(tag => tag !== '家');
+    if (!t.tags.includes('家_上班')) t.tags.push('家_上班');
+    if (!t.tags.includes('家_下班')) t.tags.push('家_下班');
+  }
 }
 function migrateAllTags() {
   [tasks, bigTasks, dailyDefs, done, heldTasks, dayHeldTasks, shelvedTasks].forEach(arr => arr.forEach(migrateTaskTags));
@@ -1939,6 +1957,7 @@ function applyCloudPayload(raw) {
     if (d.total      !== undefined) _savedTotal  = d.total;
     if (d.curId      !== undefined) _savedCurId  = d.curId;
     migrateAllTags();
+    reconcileLocVisibility();
     renderContext();
     checkDailyTasks();
     if (tasks.length > 0) loadNext();
@@ -2090,6 +2109,7 @@ function initCloud() {
 // ── Init ──
 load();
 if (todayStr() !== lastDay) dailyRollover();  // catch up if the app was closed across midnight
+reconcileLocVisibility();
 renderContext();
 renderSeason();
 checkDailyTasks();

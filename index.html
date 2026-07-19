@@ -1345,7 +1345,7 @@ function renderTimer() {
   const dailyCount = cur.type === 'daily' && cur.count > 0
     ? `<span class="pill">连续 ${cur.count} 天</span>` : '';
 
-  const waterHint = cur.name.includes('喝水') ? `<div style="font-size:0.78rem;color:var(--daily);margin-top:6px;">💊 饭后温水服用</div>` : '';
+  const waterHint = cur.name.includes('喝水') ? `<div style="font-size:0.78rem;color:var(--daily);margin-top:6px;">💊 饭后温水服用，鱼油最好随餐或饭后吃，跟着饭里的油脂一起吸收更好。至于配茶喝还是配水喝，区别不大。</div>` : '';
   curInfo.innerHTML = `
     <div class="cur-name" style="cursor:pointer" onclick="openEditModal(${cur.id},'queue')" title="点击修改名称/类型/时长">${esc(cur.name)}</div>
     <div class="cur-meta">

@@ -74,7 +74,7 @@
       border-radius: 999px; background: var(--surf2); color: var(--muted);
     }
 
-    .ctrl { display: flex; gap: 10px; }
+    .ctrl { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
     .btn {
       border: none; border-radius: 9px; padding: 10px 22px;
       font-size: 0.88rem; font-weight: 700; cursor: pointer;
@@ -441,6 +441,7 @@
         <button class="btn btn-muted" id="btnSkip">跳过</button>
         <button class="btn" id="btnSkipToday" style="display:none;background:var(--warn);color:#fff">今日跳过</button>
         <button class="btn" id="btnShelve" style="display:none;background:var(--surf3);color:var(--muted)">搁置</button>
+        <button class="btn" id="btnSpend" style="display:none;background:var(--surf2);color:var(--warn);border:1px solid var(--warn)">改为消耗</button>
       </div>
     </div>
 
@@ -666,6 +667,7 @@ const statTotalSub = document.getElementById('statTotalSub');
 const btnSkip      = document.getElementById('btnSkip');
 const btnSkipToday = document.getElementById('btnSkipToday');
 const btnShelve    = document.getElementById('btnShelve');
+const btnSpend     = document.getElementById('btnSpend');
 const skippedSec      = document.getElementById('skippedSec');
 const skippedList     = document.getElementById('skippedList');
 const btnRestoreAll   = document.getElementById('btnRestoreAll');
@@ -1270,9 +1272,14 @@ function toggleSpendCoins() {
     updateStats(); save();
     return;
   }
+  startSpendCoins();
+}
+
+function startSpendCoins() {
+  if (spendingCoins) return;
   if (coins <= 0 && coinsToday <= 0) {
     alert('没有金币可以使用，完成任务后再来！');
-    return;
+    return false;
   }
   spendingCoins   = true;
   spendStartAt    = Date.now();
@@ -1280,6 +1287,24 @@ function toggleSpendCoins() {
   spendStartCoins = coins;
   updateStats(); save();
   spendInterval = setInterval(spendTick, 1000);
+  return true;
+}
+
+// "改为消耗": bail out of the current task (shelved, so it can be resumed later)
+// and immediately switch into coin-spending mode.
+function convertToSpend() {
+  if (!cur) return;
+  if (coins <= 0 && coinsToday <= 0) {
+    alert('没有金币可以使用，完成任务后再来！');
+    return;
+  }
+  clearInterval(ticker); running = false; timerStartedAt = null;
+  const t = tasks.shift();
+  shelvedTasks.push(t);
+  renderShelved();
+  loadNext(true);
+  startSpendCoins();
+  save();
 }
 
 // Timestamp-based, not a plain counter — mobile browsers throttle/suspend
@@ -1362,6 +1387,7 @@ function renderTimer() {
   hint.style.display = 'block';
   btnSkipToday.style.display = cur.type !== 'once' ? 'inline-block' : 'none';
   btnShelve.style.display = 'inline-block';
+  btnSpend.style.display = 'inline-block';
   btnSP.textContent = running ? '暂停' : '开始';
   refreshDisp();
 }
@@ -1492,6 +1518,7 @@ btnReset.addEventListener('click', doReset);
 btnSkip.addEventListener('click', skipTask);
 btnSkipToday.addEventListener('click', skipToday);
 btnShelve.addEventListener('click', shelveTask);
+btnSpend.addEventListener('click', convertToSpend);
 btnClear.addEventListener('click', () => { done = []; renderDone(); save(); });
 
 document.addEventListener('keydown', e => {

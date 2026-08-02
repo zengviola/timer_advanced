@@ -1290,20 +1290,26 @@ function startSpendCoins() {
   return true;
 }
 
-// "改为消耗": bail out of the current task (shelved, so it can be resumed later)
-// and immediately switch into coin-spending mode.
+// "改为消耗": the seconds already ticked on this task (countdown used + any
+// overtime) get deducted from coins instead of earning them. Task is shelved
+// (not lost) so it can be resumed later.
 function convertToSpend() {
   if (!cur) return;
-  if (coins <= 0 && coinsToday <= 0) {
-    alert('没有金币可以使用，完成任务后再来！');
-    return;
-  }
   clearInterval(ticker); running = false; timerStartedAt = null;
+
+  const elapsedSecs = (total - left) + overSecs;
+  const minutes = Math.round(elapsedSecs / 60);
+  if (minutes > 0) {
+    coins = Math.max(0, coins - minutes);
+    coinsToday = Math.max(0, coinsToday - minutes);
+    coinsTs = Date.now();
+  }
+
   const t = tasks.shift();
   shelvedTasks.push(t);
   renderShelved();
   loadNext(true);
-  startSpendCoins();
+  updateStats();
   save();
 }
 

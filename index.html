@@ -919,6 +919,18 @@ function loadNext(autoStart = false) {
     ticker = setInterval(tick, 1000);
     btnSP.textContent = '暂停';
   }
+  checkBrushReminder();
+}
+
+// Pops up once per day, the first time a task with "刷牙" in its name becomes current
+function checkBrushReminder() {
+  if (!cur || !cur.name.includes('刷牙')) return;
+  if (localStorage.getItem('tt_brushReminderDate') === todayStr()) return;
+  document.getElementById('brushModal').style.display = 'flex';
+}
+function closeBrushReminder() {
+  localStorage.setItem('tt_brushReminderDate', todayStr());
+  document.getElementById('brushModal').style.display = 'none';
 }
 
 function startPause() {
@@ -2205,6 +2217,18 @@ initCloud();
     <div class="modal-btns">
       <button class="btn-cancel" onclick="closeModal()">取消</button>
       <button class="btn-save"   onclick="saveModal()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Brush Reminder Modal -->
+<div id="brushModal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)closeBrushReminder()">
+  <div class="modal-box">
+    <div class="modal-title">🪥 刷牙</div>
+    <div class="modal-task-name">今天刷牙了吗？</div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeBrushReminder()">取消</button>
+      <button class="btn-save" style="background:var(--small)" onclick="closeBrushReminder()">已完成</button>
     </div>
   </div>
 </div>

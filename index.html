@@ -142,14 +142,9 @@
       text-transform: uppercase; letter-spacing: 0.06em;
     }
 
-    #btnSpotlightNext.on { background: var(--warn); color: #fff; }
-    .q-spotlight {
-      background: rgba(245,158,11,.12) !important;
-      outline: 2px solid var(--warn); outline-offset: -1px;
-    }
-    .q-divider { display: flex; align-items: center; gap: 8px; margin: 10px 2px; }
-    .q-divider::before, .q-divider::after { content: ''; flex: 1; height: 1px; background: var(--surf3); }
-    .q-divider span { font-size: 0.68rem; color: var(--muted); white-space: nowrap; }
+    .name-seg { opacity: .45; }
+    .name-seg-hl { color: var(--warn); }
+    .name-sep { opacity: .35; margin: 0 2px; }
 
     /* Daily section card (habit overview) */
     .daily-card {
@@ -451,7 +446,7 @@
         <button class="btn" id="btnSkipToday" style="display:none;background:var(--warn);color:#fff">今日跳过</button>
         <button class="btn" id="btnShelve" style="display:none;background:var(--surf3);color:var(--muted)">搁置</button>
         <button class="btn" id="btnSpend" style="display:none;background:var(--surf2);color:var(--warn);border:1px solid var(--warn)">改为消耗</button>
-        <button class="btn btn-muted" id="btnSpotlightNext" title="高亮并分隔队列里的下一项">🔖 标记下一项</button>
+        <button class="btn btn-muted" id="btnNextSeg" style="display:none" title="任务名按 / 分段，高亮切换到下一段">▶ 下一项</button>
       </div>
     </div>
 
@@ -641,7 +636,7 @@ function tagPills(tags) {
 let selTags       = [];    // selected tags in add form (multi-select)
 let selDays       = [];    // selected days for add form ([] = every day)
 let dayHeldTasks  = [];    // tasks held because today isn't their day
-let nextSpotlight = false; // highlight + divider under the queue's next-up item, toggled by the user
+let curNameSegIdx = 0;      // for a '/'-separated task name, which segment is highlighted
 
 // DOM
 const timerSec  = document.getElementById('timerSection');
@@ -679,7 +674,7 @@ const btnSkip      = document.getElementById('btnSkip');
 const btnSkipToday = document.getElementById('btnSkipToday');
 const btnShelve    = document.getElementById('btnShelve');
 const btnSpend     = document.getElementById('btnSpend');
-const btnSpotlightNext = document.getElementById('btnSpotlightNext');
+const btnNextSeg   = document.getElementById('btnNextSeg');
 const skippedSec      = document.getElementById('skippedSec');
 const skippedList     = document.getElementById('skippedList');
 const btnRestoreAll   = document.getElementById('btnRestoreAll');
@@ -909,6 +904,7 @@ function loadNext(autoStart = false) {
     renderBig();
   }
   cur = tasks.length > 0 ? tasks[0] : null;
+  curNameSegIdx = 0;
   if (cur) {
     if (cur._left !== undefined) {
       // Interrupted by cut-in: restore the saved remaining time
@@ -1401,8 +1397,12 @@ function renderTimer() {
     ? `<span class="pill">连续 ${cur.count} 天</span>` : '';
 
   const waterHint = cur.name.includes('喝水') ? `<div style="font-size:0.78rem;color:var(--daily);margin-top:6px;">💊 饭后温水服用，鱼油最好随餐或饭后吃，跟着饭里的油脂一起吸收更好。至于配茶喝还是配水喝，区别不大。</div>` : '';
+  const nameParts = cur.name.split('/');
+  const nameHtml = nameParts.length > 1
+    ? nameParts.map((p, i) => `<span class="${i === curNameSegIdx ? 'name-seg-hl' : 'name-seg'}">${esc(p)}</span>`).join('<span class="name-sep">/</span>')
+    : esc(cur.name);
   curInfo.innerHTML = `
-    <div class="cur-name" style="cursor:pointer" onclick="openEditModal(${cur.id},'queue')" title="点击修改名称/类型/时长">${esc(cur.name)}</div>
+    <div class="cur-name" style="cursor:pointer" onclick="openEditModal(${cur.id},'queue')" title="点击修改名称/类型/时长">${nameHtml}</div>
     <div class="cur-meta">
       <span class="badge b-${cur.type}" style="cursor:pointer" onclick="openEditModal(${cur.id},'queue')" title="点击修改">${tn(cur.type)}</span>
       ${tagPills(cur.tags)}
@@ -1418,8 +1418,17 @@ function renderTimer() {
   btnSkipToday.style.display = cur.type !== 'once' ? 'inline-block' : 'none';
   btnShelve.style.display = 'inline-block';
   btnSpend.style.display = 'inline-block';
+  btnNextSeg.style.display = nameParts.length > 1 ? 'inline-block' : 'none';
   btnSP.textContent = running ? '暂停' : '开始';
   refreshDisp();
+}
+
+function advanceNameSegment() {
+  if (!cur) return;
+  const parts = cur.name.split('/');
+  if (parts.length <= 1) return;
+  curNameSegIdx = (curNameSegIdx + 1) % parts.length;
+  renderTimer();
 }
 
 function refreshDisp() {
@@ -1450,8 +1459,7 @@ function renderQ() {
     const lp     = (t.type === 'small' || t.type === 'big') && t.dayCountDate === todayStr() && t.dayCount > 0 ? `<span class="pill">×${t.dayCount}</span>` : '';
     const dayP   = t.days && t.days.length > 0 ? `<span class="pill">${fmtDays(t.days)}</span>` : '';
     const topTag = i === 0 ? `<span class="top-tag">Next</span>` : '';
-    const spotlight = i === 0 && nextSpotlight ? ' q-spotlight' : '';
-    const card = `<div class="card c-${t.type}${i === 0 ? ' slide-in' : ''}${spotlight}">
+    return `<div class="card c-${t.type}${i === 0 ? ' slide-in' : ''}">
       <div style="min-width:20px;text-align:center;font-size:.75rem;color:var(--muted);font-weight:700">${i + 2}</div>
       <div class="card-body">
         <div class="card-name">${esc(t.name)}</div>
@@ -1464,15 +1472,7 @@ function renderQ() {
       </div>
       <button class="rm-btn" onclick="removeTask(${t.id})">✕</button>
     </div>`;
-    const divider = i === 0 && nextSpotlight && up.length > 1 ? `<div class="q-divider"><span>之后</span></div>` : '';
-    return card + divider;
   }).join('');
-}
-
-function toggleNextSpotlight() {
-  nextSpotlight = !nextSpotlight;
-  btnSpotlightNext.classList.toggle('on', nextSpotlight);
-  renderQ();
 }
 
 function renderDaily() {
@@ -1558,7 +1558,7 @@ btnSkip.addEventListener('click', skipTask);
 btnSkipToday.addEventListener('click', skipToday);
 btnShelve.addEventListener('click', shelveTask);
 btnSpend.addEventListener('click', convertToSpend);
-btnSpotlightNext.addEventListener('click', toggleNextSpotlight);
+btnNextSeg.addEventListener('click', advanceNameSegment);
 btnClear.addEventListener('click', () => { done = []; renderDone(); save(); });
 
 document.addEventListener('keydown', e => {

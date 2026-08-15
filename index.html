@@ -636,7 +636,6 @@ function tagPills(tags) {
 let selTags       = [];    // selected tags in add form (multi-select)
 let selDays       = [];    // selected days for add form ([] = every day)
 let dayHeldTasks  = [];    // tasks held because today isn't their day
-let curNameSegIdx = 0;      // for a '/'-separated task name, which segment is highlighted
 
 // DOM
 const timerSec  = document.getElementById('timerSection');
@@ -904,7 +903,6 @@ function loadNext(autoStart = false) {
     renderBig();
   }
   cur = tasks.length > 0 ? tasks[0] : null;
-  curNameSegIdx = 0;
   if (cur) {
     if (cur._left !== undefined) {
       // Interrupted by cut-in: restore the saved remaining time
@@ -1398,8 +1396,9 @@ function renderTimer() {
 
   const waterHint = cur.name.includes('喝水') ? `<div style="font-size:0.78rem;color:var(--daily);margin-top:6px;">💊 饭后温水服用，鱼油最好随餐或饭后吃，跟着饭里的油脂一起吸收更好。至于配茶喝还是配水喝，区别不大。</div>` : '';
   const nameParts = cur.name.split('/');
+  const segIdx = (cur.nameSegIdx || 0) % nameParts.length;
   const nameHtml = nameParts.length > 1
-    ? nameParts.map((p, i) => `<span class="${i === curNameSegIdx ? 'name-seg-hl' : 'name-seg'}">${esc(p)}</span>`).join('<span class="name-sep">/</span>')
+    ? nameParts.map((p, i) => `<span class="${i === segIdx ? 'name-seg-hl' : 'name-seg'}">${esc(p)}</span>`).join('<span class="name-sep">/</span>')
     : esc(cur.name);
   curInfo.innerHTML = `
     <div class="cur-name" style="cursor:pointer" onclick="openEditModal(${cur.id},'queue')" title="点击修改名称/类型/时长">${nameHtml}</div>
@@ -1427,8 +1426,9 @@ function advanceNameSegment() {
   if (!cur) return;
   const parts = cur.name.split('/');
   if (parts.length <= 1) return;
-  curNameSegIdx = (curNameSegIdx + 1) % parts.length;
+  cur.nameSegIdx = ((cur.nameSegIdx || 0) + 1) % parts.length;
   renderTimer();
+  save();
 }
 
 function refreshDisp() {

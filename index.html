@@ -142,9 +142,24 @@
       text-transform: uppercase; letter-spacing: 0.06em;
     }
 
-    .name-seg { opacity: .45; }
-    .name-seg-hl { color: var(--warn); }
+    .name-seg { opacity: .4; }
+    .name-seg-hl {
+      color: var(--warn); background: rgba(245,158,11,.15);
+      padding: 2px 8px; border-radius: 6px;
+    }
     .name-sep { opacity: .35; margin: 0 2px; }
+
+    .seg-row {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--surf2); border-radius: 8px; padding: 6px 10px;
+      margin-bottom: 5px; font-size: 0.85rem;
+    }
+    .seg-row span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .seg-btn {
+      border: none; background: var(--surf3); color: var(--text); cursor: pointer;
+      width: 22px; height: 22px; border-radius: 5px; font-size: 0.7rem; flex-shrink: 0;
+    }
+    .seg-btn:disabled { opacity: .3; cursor: default; }
 
     /* Daily section card (habit overview) */
     .daily-card {
@@ -1750,6 +1765,7 @@ let editingSrc = null;
 let modalType  = null;
 let modalTags  = [];
 let modalDays  = [];
+let modalNameSegs = [];    // '/'-separated segments of the name being edited, reorderable via ▲▼
 
 function findTask(id, src) {
   if (src === 'queue') return tasks.find(t => t.id === id);
@@ -1809,6 +1825,30 @@ function setModalDays(days) {
   });
 }
 
+function setModalNameSegs(name) {
+  modalNameSegs = name.split('/');
+  renderModalSegs();
+}
+function renderModalSegs() {
+  const row = document.getElementById('modalSegRow');
+  const list = document.getElementById('modalSegList');
+  if (modalNameSegs.length <= 1) { row.style.display = 'none'; return; }
+  row.style.display = 'flex';
+  list.innerHTML = modalNameSegs.map((seg, i) => `
+    <div class="seg-row">
+      <span>${esc(seg)}</span>
+      <button class="seg-btn" onclick="moveModalSeg(${i},-1)" ${i === 0 ? 'disabled' : ''}>▲</button>
+      <button class="seg-btn" onclick="moveModalSeg(${i},1)" ${i === modalNameSegs.length - 1 ? 'disabled' : ''}>▼</button>
+    </div>`).join('');
+}
+function moveModalSeg(i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= modalNameSegs.length) return;
+  [modalNameSegs[i], modalNameSegs[j]] = [modalNameSegs[j], modalNameSegs[i]];
+  document.getElementById('modalName').value = modalNameSegs.join('/');
+  renderModalSegs();
+}
+
 function openEditModal(id, src) {
   const task = findTask(id, src);
   if (!task) return;
@@ -1816,6 +1856,7 @@ function openEditModal(id, src) {
   editingSrc = src;
   const nameInp = document.getElementById('modalName');
   nameInp.value = task.name;
+  setModalNameSegs(task.name);
   const inp = document.getElementById('modalInput');
   inp.value = Math.ceil(task.duration / 60);
   // Show type selector for queue and done tasks
@@ -1929,6 +1970,7 @@ function closeModal() {
   editingId = editingSrc = modalType = null;
   modalTags = [];
   modalDays = [];
+  modalNameSegs = [];
 }
 
 // ── Cloud Sync (GitHub Gist) ──
@@ -2194,7 +2236,12 @@ initCloud();
     <div class="fg">
       <label class="fl">任务名称</label>
       <input type="text" id="modalName" maxlength="60"
+        oninput="setModalNameSegs(this.value)"
         onkeydown="if(event.key==='Escape')closeModal()">
+    </div>
+    <div class="fg" id="modalSegRow" style="display:none">
+      <label class="fl">/ 分段顺序</label>
+      <div id="modalSegList"></div>
     </div>
     <div class="fg" id="modalTypeRow" style="display:none">
       <label class="fl">类型</label>

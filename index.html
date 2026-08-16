@@ -1481,9 +1481,9 @@ function renderQ() {
     const lp     = (t.type === 'small' || t.type === 'big') && t.dayCountDate === todayStr() && t.dayCount > 0 ? `<span class="pill">×${t.dayCount}</span>` : '';
     const dayP   = t.days && t.days.length > 0 ? `<span class="pill">${fmtDays(t.days)}</span>` : '';
     const topTag = i === 0 ? `<span class="top-tag">Next</span>` : '';
-    const dragging = t.id === draggingTaskId ? ' dragging' : '';
+    const dragging = dragCtx && dragCtx.id === t.id ? ' dragging' : '';
     return `<div class="card c-${t.type}${i === 0 ? ' slide-in' : ''}${dragging}" data-id="${t.id}">
-      <span class="drag-handle" onpointerdown="startQDrag(event, ${t.id})">⠿</span>
+      <span class="drag-handle" onpointerdown="startListDrag(event, tasks, ${t.id}, renderQ)">⠿</span>
       <div style="min-width:20px;text-align:center;font-size:.75rem;color:var(--muted);font-weight:700">${i + 2}</div>
       <div class="card-body">
         <div class="card-name">${esc(t.name)}</div>
@@ -1499,38 +1499,41 @@ function renderQ() {
   }).join('');
 }
 
-// Drag-to-reorder the queue list, via Pointer Events (works for mouse and touch alike).
-// Listeners live on document (not the handle) because renderQ() replaces the handle's
-// DOM node on every swap, which would otherwise drop any listener bound to it directly.
-let draggingTaskId = null;
-function startQDrag(e, id) {
+// Drag-to-reorder any task list (queue, big-cycle, ...), via Pointer Events (works for
+// mouse and touch alike). Listeners live on document (not the handle) because the list's
+// render call replaces the handle's DOM node on every swap, which would otherwise drop
+// any listener bound to it directly.
+let dragCtx = null; // { arr, id, render }
+function startListDrag(e, arr, id, render) {
   e.preventDefault();
-  draggingTaskId = id;
-  document.addEventListener('pointermove', onQDragMove);
-  document.addEventListener('pointerup', endQDrag);
-  document.addEventListener('pointercancel', endQDrag);
-  renderQ();
+  dragCtx = { arr, id, render };
+  document.addEventListener('pointermove', onListDragMove);
+  document.addEventListener('pointerup', endListDrag);
+  document.addEventListener('pointercancel', endListDrag);
+  render();
 }
-function onQDragMove(e) {
-  if (draggingTaskId === null) return;
+function onListDragMove(e) {
+  if (!dragCtx) return;
   const el = document.elementFromPoint(e.clientX, e.clientY);
   const card = el && el.closest('.card[data-id]');
   if (!card) return;
   const overId = parseInt(card.dataset.id);
-  if (overId === draggingTaskId) return;
-  const fromIdx = tasks.findIndex(t => t.id === draggingTaskId);
-  const toIdx   = tasks.findIndex(t => t.id === overId);
+  if (overId === dragCtx.id) return;
+  const { arr } = dragCtx;
+  const fromIdx = arr.findIndex(t => t.id === dragCtx.id);
+  const toIdx   = arr.findIndex(t => t.id === overId);
   if (fromIdx === -1 || toIdx === -1) return;
-  const [moved] = tasks.splice(fromIdx, 1);
-  tasks.splice(toIdx, 0, moved);
-  renderQ();
+  const [moved] = arr.splice(fromIdx, 1);
+  arr.splice(toIdx, 0, moved);
+  dragCtx.render();
 }
-function endQDrag() {
-  document.removeEventListener('pointermove', onQDragMove);
-  document.removeEventListener('pointerup', endQDrag);
-  document.removeEventListener('pointercancel', endQDrag);
-  draggingTaskId = null;
-  renderQ();
+function endListDrag() {
+  document.removeEventListener('pointermove', onListDragMove);
+  document.removeEventListener('pointerup', endListDrag);
+  document.removeEventListener('pointercancel', endListDrag);
+  const render = dragCtx && dragCtx.render;
+  dragCtx = null;
+  if (render) render();
   save();
 }
 
@@ -1571,7 +1574,9 @@ function renderBig() {
     const progress = smallCount % every;
     const pct      = Math.round((progress / every) * 100);
     const remain   = every - progress;
-    return `<div class="card c-big">
+    const dragging = dragCtx && dragCtx.id === bt.id ? ' dragging' : '';
+    return `<div class="card c-big${dragging}" data-id="${bt.id}">
+      <span class="drag-handle" onpointerdown="startListDrag(event, bigTasks, ${bt.id}, renderBig)">⠿</span>
       <div class="card-body">
         <div class="card-name">${esc(bt.name)}</div>
         <div class="card-sub">

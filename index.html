@@ -112,6 +112,13 @@
     .c-big   { border-left-color: var(--big); }
     .c-daily { border-left-color: var(--daily); }
     .c-done  { opacity: .5; }
+    .card.dragging { opacity: .45; }
+
+    .drag-handle {
+      cursor: grab; touch-action: none; user-select: none;
+      color: var(--surf3); font-size: 1.1rem; flex-shrink: 0;
+      padding: 4px 2px;
+    }
 
     .card-body { flex: 1; min-width: 0; }
     .card-name {
@@ -1474,7 +1481,9 @@ function renderQ() {
     const lp     = (t.type === 'small' || t.type === 'big') && t.dayCountDate === todayStr() && t.dayCount > 0 ? `<span class="pill">×${t.dayCount}</span>` : '';
     const dayP   = t.days && t.days.length > 0 ? `<span class="pill">${fmtDays(t.days)}</span>` : '';
     const topTag = i === 0 ? `<span class="top-tag">Next</span>` : '';
-    return `<div class="card c-${t.type}${i === 0 ? ' slide-in' : ''}">
+    const dragging = t.id === draggingTaskId ? ' dragging' : '';
+    return `<div class="card c-${t.type}${i === 0 ? ' slide-in' : ''}${dragging}" data-id="${t.id}">
+      <span class="drag-handle" onpointerdown="startQDrag(event, ${t.id})">⠿</span>
       <div style="min-width:20px;text-align:center;font-size:.75rem;color:var(--muted);font-weight:700">${i + 2}</div>
       <div class="card-body">
         <div class="card-name">${esc(t.name)}</div>
@@ -1488,6 +1497,41 @@ function renderQ() {
       <button class="rm-btn" onclick="removeTask(${t.id})">✕</button>
     </div>`;
   }).join('');
+}
+
+// Drag-to-reorder the queue list, via Pointer Events (works for mouse and touch alike).
+// Listeners live on document (not the handle) because renderQ() replaces the handle's
+// DOM node on every swap, which would otherwise drop any listener bound to it directly.
+let draggingTaskId = null;
+function startQDrag(e, id) {
+  e.preventDefault();
+  draggingTaskId = id;
+  document.addEventListener('pointermove', onQDragMove);
+  document.addEventListener('pointerup', endQDrag);
+  document.addEventListener('pointercancel', endQDrag);
+  renderQ();
+}
+function onQDragMove(e) {
+  if (draggingTaskId === null) return;
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const card = el && el.closest('.card[data-id]');
+  if (!card) return;
+  const overId = parseInt(card.dataset.id);
+  if (overId === draggingTaskId) return;
+  const fromIdx = tasks.findIndex(t => t.id === draggingTaskId);
+  const toIdx   = tasks.findIndex(t => t.id === overId);
+  if (fromIdx === -1 || toIdx === -1) return;
+  const [moved] = tasks.splice(fromIdx, 1);
+  tasks.splice(toIdx, 0, moved);
+  renderQ();
+}
+function endQDrag() {
+  document.removeEventListener('pointermove', onQDragMove);
+  document.removeEventListener('pointerup', endQDrag);
+  document.removeEventListener('pointercancel', endQDrag);
+  draggingTaskId = null;
+  renderQ();
+  save();
 }
 
 function renderDaily() {

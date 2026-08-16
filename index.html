@@ -635,7 +635,7 @@ let smallCount    = 0;   // cumulative small-cycle completions (drives big-cycle
 let locState      = 'work'; // 'home_before' | 'work' | 'home_after' — current location
 let heldTasks     = [];    // tasks pulled out of the queue because their tag doesn't match locState
 const LOC_ORDER = ['home_before', 'work', 'home_after'];
-const LOC_LABEL = { home_before: '家 · 上班前', work: '公司', home_after: '家 · 下班后' };
+const LOC_LABEL = { home_before: '家 · 上班中', work: '公司', home_after: '家 · 下班后' };
 const LOC_SUB   = { home_before: '其他任务已隐藏', work: '家庭任务已隐藏', home_after: '其他任务已隐藏' };
 const LOC_COLOR = { home_before: 'var(--small)', work: 'var(--once)', home_after: 'var(--small)' };
 // Which tag (if any) stays visible in a given location; tasks with any other tag are held aside.

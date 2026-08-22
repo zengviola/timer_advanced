@@ -1016,6 +1016,14 @@ function dailyRollover() {
   });
   skippedTasks = [];
   done = done.filter(t => t.type !== 'daily');
+  // Drop queued daily instances whose def is no longer restricted to today
+  // (otherwise a task left uncompleted on e.g. Friday keeps showing on Saturday)
+  tasks = tasks.filter(t => {
+    if (t.type !== 'daily') return true;
+    const def = dailyDefs.find(d => d.id === t.dailyId);
+    return !def || taskActiveToday(def);
+  });
+  if (cur && !tasks.includes(cur)) cur = null;  // dropped above; force loadNext() to pick a valid task
   updateStats(); renderSkipped(); renderDone();
   checkDailyTasks();
   if (!cur) loadNext(); else renderQ();

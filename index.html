@@ -874,7 +874,20 @@ function injectDaily(def) {
 // Check all daily tasks (called on load and every minute)
 function checkDailyTasks() {
   const today = todayStr();
-  let added = false;
+  let changed = false;
+  // Self-heal: drop any queued instance whose def is no longer restricted to today.
+  // Runs every check (not just at midnight rollover) so it also cleans up state left
+  // over from before a def's days were edited, or from before this filtering existed.
+  const beforeLen = tasks.length;
+  tasks = tasks.filter(t => {
+    if (t.type !== 'daily') return true;
+    const def = dailyDefs.find(d => d.id === t.dailyId);
+    return !def || taskActiveToday(def);
+  });
+  if (tasks.length !== beforeLen) {
+    if (cur && !tasks.includes(cur)) cur = null;
+    changed = true;
+  }
   dailyDefs.forEach(def => {
     if (def.lastCompleted === today) return;
     if (def.skippedToday === today) return;  // skipped for today
@@ -883,9 +896,9 @@ function checkDailyTasks() {
     if (alreadyIn) return;
     const task = { id: uid++, name: def.name, duration: def.duration, type: 'daily', dailyId: def.id, count: def.count };
     pushTop(task);
-    added = true;
+    changed = true;
   });
-  if (added) {
+  if (changed) {
     if (!cur) loadNext();
     else renderQ();
     renderDaily();
@@ -1016,16 +1029,8 @@ function dailyRollover() {
   });
   skippedTasks = [];
   done = done.filter(t => t.type !== 'daily');
-  // Drop queued daily instances whose def is no longer restricted to today
-  // (otherwise a task left uncompleted on e.g. Friday keeps showing on Saturday)
-  tasks = tasks.filter(t => {
-    if (t.type !== 'daily') return true;
-    const def = dailyDefs.find(d => d.id === t.dailyId);
-    return !def || taskActiveToday(def);
-  });
-  if (cur && !tasks.includes(cur)) cur = null;  // dropped above; force loadNext() to pick a valid task
   updateStats(); renderSkipped(); renderDone();
-  checkDailyTasks();
+  checkDailyTasks();  // also prunes queued daily instances no longer active today
   if (!cur) loadNext(); else renderQ();
   save();
 }

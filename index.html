@@ -416,6 +416,11 @@
       <div class="stat-sub" id="statTodaySub">—</div>
     </div>
     <div class="stat-card">
+      <div class="stat-label">今日已完成</div>
+      <div class="stat-value" id="statCompleted">0</div>
+      <div class="stat-sub" id="statCompletedSub">个任务</div>
+    </div>
+    <div class="stat-card">
       <div class="stat-label">累计总时</div>
       <div class="stat-value" id="statTotal">0m</div>
       <div class="stat-sub" id="statTotalSub">—</div>
@@ -618,6 +623,7 @@ let todayAtResume  = null;  // totalToday when run began
 let alarmFired     = false; // prevent repeat alarm animation
 let totalAllTime  = 0;
 let totalToday    = 0;
+let completedToday = 0;
 let coins         = 0;
 let coinsToday    = 0;
 let coinsTs       = 0;   // ms timestamp of last local coins change; guards against stale cloud pulls overwriting a fresher local deduction
@@ -689,6 +695,7 @@ const btnAdd    = document.getElementById('btnAdd');
 const btnCutIn  = document.getElementById('btnCutIn');
 const statToday    = document.getElementById('statToday');
 const statTodaySub = document.getElementById('statTodaySub');
+const statCompleted = document.getElementById('statCompleted');
 const statTotal    = document.getElementById('statTotal');
 const statTotalSub = document.getElementById('statTotalSub');
 const btnSkip      = document.getElementById('btnSkip');
@@ -1020,6 +1027,7 @@ function tick() {
 function dailyRollover() {
   lastDay = todayStr();
   totalToday = 0;
+  completedToday = 0;
   todayAtResume = 0;  // reset so running tick doesn't restore old value
   if (running) recordStart();  // rebase timerStartedAt so a running task doesn't recompute elapsed from before the reset
   smallCount = 0;  // small-cycle count toward next big-cycle trigger resets daily
@@ -1057,6 +1065,7 @@ function doComplete() {
     : Math.min(t.duration, t.duration);
   const earned = Math.max(1, Math.round(earnedSecs / 60));
   coins += earned; coinsToday += earned; coinsTs = Date.now();
+  completedToday++;
 
   if (t.type === 'once') {
     t.count = 1;
@@ -1294,6 +1303,7 @@ function fmtDur(ms) {
 function updateStats() {
   statToday.textContent    = fmtTime(totalToday);
   statTodaySub.textContent = fmtSub(totalToday);
+  statCompleted.textContent = completedToday;
   statTotal.textContent    = fmtTime(totalAllTime);
   statTotalSub.textContent = fmtSub(totalAllTime);
   document.getElementById('statCoins').textContent    = coinsToday;
@@ -1312,8 +1322,9 @@ function updateStats() {
   updateWater();
 }
 function resetToday() {
-  if (!confirm('把今日已用归零？')) return;
+  if (!confirm('把今日已用与今日已完成归零？')) return;
   totalToday = 0; todayAtResume = 0;
+  completedToday = 0;
   if (running) recordStart();  // rebase timerStartedAt so a running task doesn't recompute elapsed from before the reset
   smallCount = 0;  // small-cycle count toward next big-cycle trigger
   updateStats(); save();
@@ -1701,6 +1712,8 @@ function save() {
     localStorage.setItem('tt_allTime',      totalAllTime);
     localStorage.setItem('tt_today',        totalToday);
     localStorage.setItem('tt_todayDate',    todayStr());
+    localStorage.setItem('tt_completedToday',     completedToday);
+    localStorage.setItem('tt_completedTodayDate', todayStr());
     localStorage.setItem('tt_coins',        coins);
     localStorage.setItem('tt_coinsToday',   coinsToday);
     localStorage.setItem('tt_coinsTodayDate', todayStr());
@@ -1746,6 +1759,9 @@ function load() {
     if (u)  uid       = parseInt(u)  || 1;
     if (at) totalAllTime = parseInt(at) || 0;
     if (td && tdd === todayStr()) totalToday = parseInt(td) || 0;
+    const cpt  = localStorage.getItem('tt_completedToday');
+    const cptd = localStorage.getItem('tt_completedTodayDate');
+    if (cpt && cptd === todayStr()) completedToday = parseInt(cpt) || 0;
     const co = localStorage.getItem('tt_coins');
     const cot= localStorage.getItem('tt_coinsToday');
     const cotd = localStorage.getItem('tt_coinsTodayDate');
@@ -2085,6 +2101,7 @@ function getCloudPayload() {
     tasks, bigTasks, dailyDefs, done, uid,
     totalAllTime,
     totalToday, totalTodayDate: todayStr(),
+    completedToday, completedTodayDate: todayStr(),
     coins, coinsToday, coinsTodayDate: todayStr(), coinsTs,
     skippedTasks, shelvedTasks,
     heldTasks, locState, smallCount,
@@ -2104,6 +2121,9 @@ function applyCloudPayload(raw) {
     if (d.totalAllTime !== undefined) totalAllTime = d.totalAllTime;
     if (d.totalToday !== undefined && (d.totalTodayDate || d.savedDate) === todayStr()) {
       totalToday = d.totalToday > 86400 ? 0 : d.totalToday;
+    }
+    if (d.completedToday !== undefined && (d.completedTodayDate || d.savedDate) === todayStr()) {
+      completedToday = d.completedToday;
     }
     // Only accept cloud coins if they're actually newer than our last local change —
     // otherwise a stale gist (e.g. pulled right after a phone was backgrounded for

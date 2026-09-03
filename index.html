@@ -785,17 +785,22 @@ function reconcileLocVisibility() {
   const stillHeld = [];
   heldTasks.forEach(t => { if (tagsVisible(t.tags, locState)) pushTop(t); else stillHeld.push(t); });
   heldTasks = stillHeld;
+  // `cur` is tasks[0] while a task is loaded/running, so the sweep above already moved it
+  // into heldTasks if it no longer matches — but `cur` itself is a separate reference that
+  // sweep doesn't touch, so the stale task would otherwise keep showing (and ticking) on
+  // screen. Clear it here so every caller — not just the explicit location-toggle button —
+  // picks up a location-appropriate current task.
+  if (cur && !tagsVisible(cur.tags, locState)) {
+    clearInterval(ticker); running = false; overSecs = 0; timerStartedAt = null;
+    cur = null;
+  }
 }
 
 function toggleContext() {
   locState = LOC_ORDER[(LOC_ORDER.indexOf(locState) + 1) % LOC_ORDER.length];
+  // reconcileLocVisibility() clears `cur` itself if it no longer belongs at the new location
   reconcileLocVisibility();
-  // If current task no longer belongs here, stop and reload
-  if (cur && !tagsVisible(cur.tags, locState)) {
-    clearInterval(ticker); running = false; overSecs = 0;
-    cur = null;
-    loadNext();
-  } else if (!cur) loadNext();
+  if (!cur) loadNext();
   else renderQ();
   renderContext();
   save();

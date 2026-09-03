@@ -523,6 +523,7 @@
   <div class="section" id="shelvedSec" style="display:none">
     <div class="sec-head">
       <span class="sec-label" style="color:var(--muted)">已搁置</span>
+      <button class="btn btn-muted btn-sm" id="btnRestoreAllShelved">全部恢复</button>
     </div>
     <div id="shelvedList"></div>
   </div>
@@ -710,6 +711,7 @@ const skippedList     = document.getElementById('skippedList');
 const btnRestoreAll   = document.getElementById('btnRestoreAll');
 const shelvedSec   = document.getElementById('shelvedSec');
 const shelvedList  = document.getElementById('shelvedList');
+const btnRestoreAllShelved = document.getElementById('btnRestoreAllShelved');
 
 // ── Type Toggle ──
 document.querySelector('.type-toggle').addEventListener('click', e => {
@@ -1158,6 +1160,14 @@ function restoreShelved(taskId) {
   if (idx === -1) return;
   const t = shelvedTasks.splice(idx, 1)[0];
   pushTop(t);
+  if (!cur) loadNext(); else renderQ();
+  renderShelved(); save();
+}
+
+function restoreAllShelved() {
+  if (shelvedTasks.length === 0) return;
+  shelvedTasks.forEach(t => pushTop(t));
+  shelvedTasks = [];
   if (!cur) loadNext(); else renderQ();
   renderShelved(); save();
 }
@@ -1650,6 +1660,7 @@ btnShelve.addEventListener('click', shelveTask);
 btnSpend.addEventListener('click', convertToSpend);
 btnNextSeg.addEventListener('click', advanceNameSegment);
 btnClear.addEventListener('click', () => { done = []; renderDone(); save(); });
+btnRestoreAllShelved.addEventListener('click', restoreAllShelved);
 
 document.addEventListener('keydown', e => {
   const tag = e.target.tagName;

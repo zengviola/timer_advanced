@@ -637,6 +637,8 @@ let _savedTotal   = null;
 let _savedCurId   = null;
 let skippedTasks  = [];  // { task, skippedDate } for small/big cycle skipped today
 let shelvedTasks  = [];  // tasks shelved indefinitely until manually restored
+let tasksTs       = 0;   // ms timestamp of last local change to tasks/bigTasks/dailyDefs/shelvedTasks/heldTasks; guards against a stale cloud pull clobbering a fresher local queue
+let _lastQueueSnap = null; // internal: snapshot used by save() to detect whether queue state actually changed
 let smallCount    = 0;   // cumulative small-cycle completions (drives big-cycle triggers)
 let locState      = 'work'; // 'home_before' | 'work' | 'home_after' — current location
 let heldTasks     = [];    // tasks pulled out of the queue because their tag doesn't match locState
@@ -1700,6 +1702,9 @@ function esc(s) {
 // ── Persist ──
 function save() {
   try {
+    const queueSnap = JSON.stringify([tasks, bigTasks, dailyDefs, shelvedTasks, heldTasks]);
+    if (queueSnap !== _lastQueueSnap) { tasksTs = Date.now(); _lastQueueSnap = queueSnap; }
+    localStorage.setItem('tt_tasksTs', tasksTs);
     // Stable keys — will never change prefix again
     localStorage.setItem('tt_tasks',     JSON.stringify(tasks));
     localStorage.setItem('tt_big',       JSON.stringify(bigTasks));
@@ -1783,6 +1788,8 @@ function load() {
     if (sh) shelvedTasks = JSON.parse(sh);
     const dh = localStorage.getItem('tt_dayHeld');
     if (dh) dayHeldTasks = JSON.parse(dh);
+    const tts = localStorage.getItem('tt_tasksTs');
+    if (tts) tasksTs = parseInt(tts) || 0;
     if (l)  _savedLeft  = parseInt(l);
     if (tot)_savedTotal = parseInt(tot);
     if (ci) _savedCurId = parseInt(ci);
@@ -1806,6 +1813,7 @@ function load() {
     if (ld) lastDay = ld;
   } catch(_) {}
   migrateAllTags();
+  _lastQueueSnap = JSON.stringify([tasks, bigTasks, dailyDefs, shelvedTasks, heldTasks]);
 }
 
 // Migrate tasks saved before tags became multi-select (singular `tag` string -> `tags` array)
@@ -2103,7 +2111,7 @@ function getCloudPayload() {
     totalToday, totalTodayDate: todayStr(),
     completedToday, completedTodayDate: todayStr(),
     coins, coinsToday, coinsTodayDate: todayStr(), coinsTs,
-    skippedTasks, shelvedTasks,
+    skippedTasks, shelvedTasks, tasksTs,
     heldTasks, locState, smallCount,
     left, total, curId: cur ? cur.id : -1,
     savedDate: todayStr()
@@ -2113,9 +2121,25 @@ function getCloudPayload() {
 function applyCloudPayload(raw) {
   try {
     const d = JSON.parse(raw);
-    if (d.tasks      !== undefined) tasks        = d.tasks;
-    if (d.bigTasks   !== undefined) bigTasks     = d.bigTasks;
-    if (d.dailyDefs  !== undefined) dailyDefs    = d.dailyDefs;
+    // Only accept the cloud's queue (tasks/bigTasks/dailyDefs/shelvedTasks/heldTasks) if
+    // it's actually newer than our last local change, or our local queue is empty (first
+    // sync on a fresh device) — otherwise a stale tab/device pushing an old snapshot would
+    // silently clobber a fresher local queue (e.g. resurrect tasks that were already
+    // restored from 已搁置, or re-shelve tasks that are live in the current queue).
+    const localQueueEmpty = tasks.length === 0 && bigTasks.length === 0 && dailyDefs.length === 0 && shelvedTasks.length === 0;
+    if ((d.tasksTs || 0) > tasksTs || localQueueEmpty) {
+      if (d.tasks        !== undefined) tasks        = d.tasks;
+      if (d.bigTasks     !== undefined) bigTasks     = d.bigTasks;
+      if (d.dailyDefs    !== undefined) dailyDefs    = d.dailyDefs;
+      if (d.shelvedTasks !== undefined) shelvedTasks = d.shelvedTasks;
+      if (d.heldTasks    !== undefined) {
+        heldTasks = d.heldTasks;
+      } else if (d.homeTasks !== undefined || d.workTasks !== undefined) {
+        // Legacy cloud payload from before the 3-state location split
+        heldTasks = [...(d.homeTasks || []), ...(d.workTasks || [])];
+      }
+      tasksTs = Math.max(d.tasksTs || 0, tasksTs);
+    }
     if (d.done       !== undefined) done         = d.done;
     if (d.uid        !== undefined) uid          = d.uid;
     if (d.totalAllTime !== undefined) totalAllTime = d.totalAllTime;
@@ -2134,13 +2158,6 @@ function applyCloudPayload(raw) {
       coinsTs = d.coinsTs || coinsTs;
     }
     if (d.skippedTasks !== undefined && (d.totalTodayDate || d.savedDate) === todayStr()) skippedTasks = d.skippedTasks;
-    if (d.shelvedTasks !== undefined) shelvedTasks = d.shelvedTasks;
-    if (d.heldTasks  !== undefined) {
-      heldTasks = d.heldTasks;
-    } else if (d.homeTasks !== undefined || d.workTasks !== undefined) {
-      // Legacy cloud payload from before the 3-state location split
-      heldTasks = [...(d.homeTasks || []), ...(d.workTasks || [])];
-    }
     if (d.locState   !== undefined) locState     = d.locState;
     else if (d.workMode !== undefined) locState  = d.workMode ? 'work' : 'home_before';
     if (d.smallCount !== undefined) smallCount   = d.smallCount;

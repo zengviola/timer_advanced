@@ -763,13 +763,21 @@ function renderContext() {
 
 // Southern-hemisphere meteorological seasons (Jan/Feb=夏, Mar-May=秋, Jun-Aug=冬, Sep-Nov=春, Dec=夏)
 const SEASON_BY_MONTH = ['夏','夏','秋','秋','秋','冬','冬','冬','春','春','春','夏'];
+const SEASON_ORDER  = ['夏','秋','冬','春']; // cyclic order seasons transition in
+const SEASON_START_MONTH = { '夏': 11, '秋': 2, '冬': 5, '春': 8 }; // month (0-indexed) each season begins
+const SEASON_LABEL = { '春': '春天', '夏': '夏天', '秋': '秋天', '冬': '冬天' };
+const SEASON_COLOR = { '春': '#10b981', '夏': '#f97316', '秋': '#d97706', '冬': '#38bdf8' };
 function renderSeason() {
   const now = new Date();
-  document.getElementById('statSeason').textContent = SEASON_BY_MONTH[now.getMonth()];
-  let springStart = new Date(now.getFullYear(), 8, 1); // Sep 1
-  if (now >= springStart) springStart = new Date(now.getFullYear() + 1, 8, 1);
-  const daysUntil = Math.ceil((springStart - now) / 86400000);
-  document.getElementById('statSeasonSub').textContent = `距离春天还有 ${daysUntil} 天`;
+  const season = SEASON_BY_MONTH[now.getMonth()];
+  const nextSeason = SEASON_ORDER[(SEASON_ORDER.indexOf(season) + 1) % SEASON_ORDER.length];
+  let nextStart = new Date(now.getFullYear(), SEASON_START_MONTH[nextSeason], 1);
+  if (nextStart <= now) nextStart = new Date(now.getFullYear() + 1, SEASON_START_MONTH[nextSeason], 1);
+  const daysUntil = Math.ceil((nextStart - now) / 86400000);
+  const seasonEl = document.getElementById('statSeason');
+  seasonEl.textContent = season;
+  seasonEl.style.color = SEASON_COLOR[season];
+  document.getElementById('statSeasonSub').textContent = `距离${SEASON_LABEL[nextSeason]}还有 ${daysUntil} 天`;
 }
 
 // Re-partition tasks/heldTasks against the current locState. Needed not just on an

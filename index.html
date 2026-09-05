@@ -1380,11 +1380,11 @@ function startSpendCoins() {
 }
 
 // "改为消耗": the seconds already ticked on this task (countdown used + any
-// overtime) get deducted from coins instead of earning them. Task is shelved
-// (not lost) so it can be resumed later.
+// overtime) get deducted from coins instead of earning them, then the task
+// resets to its full duration and stays right where it is in the queue —
+// this is purely a coin conversion, unrelated to 搁置.
 function convertToSpend() {
   if (!cur) return;
-  if (!confirm(`将「${cur.name}」改为消耗会把这个任务搁置（移入已搁置列表），需要手动恢复才能继续。确定要继续吗？`)) return;
   clearInterval(ticker); running = false; timerStartedAt = null;
 
   const elapsedSecs = (total - left) + overSecs;
@@ -1395,10 +1395,10 @@ function convertToSpend() {
     coinsTs = Date.now();
   }
 
-  const t = tasks.shift();
-  shelvedTasks.push(t);
-  renderShelved();
-  loadNext(true);
+  overSecs = 0;
+  left = cur.duration; total = cur.duration;
+  btnSP.textContent = '开始';
+  refreshDisp();
   updateStats();
   save();
 }

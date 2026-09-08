@@ -439,6 +439,7 @@
     </div>
     <div class="coin-spend-detail" id="coinSpendDetail" style="display:none">
       <span>开始 <b id="spendStartDisp">0</b></span>
+      <span>共可消耗 <b id="spendTotalDisp">00:00</b></span>
       <span>持续 <b id="spendElapsedDisp">00:00</b></span>
       <span>已扣 <b id="spendDeductedDisp">0</b></span>
       <button class="btn-stop-spend" onclick="toggleSpendCoins()">停止扣金币</button>
@@ -1332,13 +1333,14 @@ function updateStats() {
   statTotal.textContent    = fmtTime(totalAllTime);
   statTotalSub.textContent = fmtSub(totalAllTime);
   document.getElementById('statCoins').textContent    = coinsToday;
-  document.getElementById('statCoinsSub').textContent = `累计 ${coins}`;
+  document.getElementById('statCoinsSub').textContent = `累计 ${coins} · 可消耗 ${fmtDur(coins * 60000)}`;
   document.getElementById('coinRow').classList.toggle('spending', spendingCoins);
   document.getElementById('btnStartSpend').style.display    = spendingCoins ? 'none' : 'inline-block';
   const detail = document.getElementById('coinSpendDetail');
   if (spendingCoins && spendStartAt) {
     detail.style.display = 'flex';
     document.getElementById('spendStartDisp').textContent    = spendStartCoins;
+    document.getElementById('spendTotalDisp').textContent    = fmtDur(spendStartCoins * 60000);
     document.getElementById('spendElapsedDisp').textContent  = fmtDur(Date.now() - spendStartAt);
     document.getElementById('spendDeductedDisp').textContent = Math.max(0, spendStartCoins - coins);
   } else {

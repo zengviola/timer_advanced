@@ -435,7 +435,7 @@
         <span class="coin-value" id="statCoins">0</span>
         <span class="coin-sub" id="statCoinsSub">累计 0</span>
       </div>
-      <button class="btn-start-spend" id="btnStartSpend" onclick="toggleSpendCoins()">开始消耗</button>
+      <button class="btn-start-spend" id="btnStartSpend" onclick="toggleSpendCoins()">开始消耗 <span id="btnStartSpendDur"></span></button>
     </div>
     <div class="coin-spend-detail" id="coinSpendDetail" style="display:none">
       <span>开始 <b id="spendStartDisp">0</b></span>
@@ -1334,6 +1334,7 @@ function updateStats() {
   statTotalSub.textContent = fmtSub(totalAllTime);
   document.getElementById('statCoins').textContent    = coinsToday;
   document.getElementById('statCoinsSub').textContent = `累计 ${coins} · 可消耗 ${fmtDur(coins * 60000)}`;
+  document.getElementById('btnStartSpendDur').textContent = coins > 0 ? `(${fmtDur(coins * 60000)})` : '';
   document.getElementById('coinRow').classList.toggle('spending', spendingCoins);
   document.getElementById('btnStartSpend').style.display    = spendingCoins ? 'none' : 'inline-block';
   const detail = document.getElementById('coinSpendDetail');

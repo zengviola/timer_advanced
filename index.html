@@ -441,7 +441,9 @@
       <span>开始 <b id="spendStartDisp">0</b></span>
       <span>共可消耗 <b id="spendTotalDisp">00:00</b></span>
       <span>持续 <b id="spendElapsedDisp">00:00</b></span>
-      <span>已扣 <b id="spendDeductedDisp">0</b></span>
+      <span title="消耗计时器本身扣掉的金币，不算任务赚回来的">消耗 <b id="spendGrossDisp">0</b></span>
+      <span title="这期间完成任务赚回的金币">赚取 <b id="spendEarnedDisp">0</b></span>
+      <span title="消耗和赚取相抵后，余额实际少了多少">净扣 <b id="spendDeductedDisp">0</b></span>
       <button class="btn-stop-spend" onclick="toggleSpendCoins()">停止扣金币</button>
     </div>
   </div>
@@ -634,6 +636,8 @@ let spendInterval = null;
 let spendStartAt  = null;
 let spendDeducted = 0;
 let spendStartCoins = 0;  // coins balance at the moment the current spend session began
+let spendGross    = 0;   // coins actually taken by the spend timer itself this session (ignores earnings)
+let spendEarned   = 0;   // coins earned by completing tasks while this spend session is active
 let _savedLeft    = null;
 let _savedTotal   = null;
 let _savedCurId   = null;
@@ -1083,6 +1087,7 @@ function doComplete() {
     : Math.min(t.duration, t.duration);
   const earned = Math.max(1, Math.round(earnedSecs / 60));
   coins += earned; coinsToday += earned; coinsTs = Date.now();
+  if (spendingCoins) spendEarned += earned;
   completedToday++;
 
   if (t.type === 'once') {
@@ -1343,6 +1348,8 @@ function updateStats() {
     document.getElementById('spendStartDisp').textContent    = spendStartCoins;
     document.getElementById('spendTotalDisp').textContent    = fmtDur(spendStartCoins * 60000);
     document.getElementById('spendElapsedDisp').textContent  = fmtDur(Date.now() - spendStartAt);
+    document.getElementById('spendGrossDisp').textContent    = spendGross;
+    document.getElementById('spendEarnedDisp').textContent   = spendEarned;
     document.getElementById('spendDeductedDisp').textContent = Math.max(0, spendStartCoins - coins);
   } else {
     detail.style.display = 'none';
@@ -1361,6 +1368,7 @@ function toggleSpendCoins() {
   if (spendingCoins) {
     clearInterval(spendInterval); spendInterval = null;
     spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
+    spendGross = 0; spendEarned = 0;
     updateStats(); save();
     return;
   }
@@ -1377,6 +1385,8 @@ function startSpendCoins() {
   spendStartAt    = Date.now();
   spendDeducted   = 0;
   spendStartCoins = coins;
+  spendGross      = 0;
+  spendEarned     = 0;
   updateStats(); save();
   spendInterval = setInterval(spendTick, 1000);
   return true;
@@ -1415,7 +1425,7 @@ function spendTick() {
   const due = elapsedMin - spendDeducted;
   if (due > 0) {
     for (let i = 0; i < due && coins > 0; i++) {
-      coins--; coinsToday = Math.max(0, coinsToday - 1);
+      coins--; coinsToday = Math.max(0, coinsToday - 1); spendGross++;
     }
     spendDeducted = elapsedMin;
     coinsTs = Date.now();
@@ -1424,6 +1434,7 @@ function spendTick() {
   if (coins <= 0) {
     clearInterval(spendInterval); spendInterval = null;
     spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
+    spendGross = 0; spendEarned = 0;
   }
   updateStats();
 }
@@ -1754,6 +1765,8 @@ function save() {
     localStorage.setItem('tt_spending',     spendingCoins ? '1' : '0');
     localStorage.setItem('tt_spendStartAt', spendStartAt || '');
     localStorage.setItem('tt_spendStartCoins', spendStartCoins);
+    localStorage.setItem('tt_spendGross',   spendGross);
+    localStorage.setItem('tt_spendEarned',  spendEarned);
     localStorage.setItem('tt_skipped',   JSON.stringify(skippedTasks));
     localStorage.setItem('tt_shelved',   JSON.stringify(shelvedTasks));
     localStorage.setItem('tt_heldTasks',  JSON.stringify(heldTasks));
@@ -1805,10 +1818,14 @@ function load() {
     const sp  = localStorage.getItem('tt_spending');
     const spa = localStorage.getItem('tt_spendStartAt');
     const spc = localStorage.getItem('tt_spendStartCoins');
+    const spg = localStorage.getItem('tt_spendGross');
+    const spe = localStorage.getItem('tt_spendEarned');
     if (sp === '1' && spa) {
       spendingCoins   = true;
       spendStartAt    = parseInt(spa) || null;
       spendStartCoins = spc !== null ? (parseInt(spc) || 0) : coins;
+      spendGross      = spg !== null ? (parseInt(spg) || 0) : 0;
+      spendEarned     = spe !== null ? (parseInt(spe) || 0) : 0;
     }
     const sk = pick('tt_skipped',  'tt5_skipped');
     if (sk && tdd === todayStr()) skippedTasks = JSON.parse(sk);

@@ -1101,7 +1101,9 @@ function doComplete() {
     const _td = todayStr();
     if (t.dayCountDate !== _td) { t.dayCount = 0; t.dayCountDate = _td; }
     t.dayCount = (t.dayCount || 0) + 1;
-    if (taskActiveToday(t)) tasks.push(t); else dayHeldTasks.push(t);
+    if (!taskActiveToday(t)) dayHeldTasks.push(t);
+    else if (tagsVisible(t.tags, locState)) tasks.push(t);
+    else heldTasks.push(t);
     checkTriggers();
 
   } else if (t.type === 'big') {

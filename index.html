@@ -368,7 +368,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v70</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v71</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -1087,11 +1087,13 @@ function doComplete() {
 
   const t = tasks.shift();
 
-  // Award coins based on actual time spent; guard against null totalAtResume
-  const earnedSecs = totalAtResume !== null
-    ? Math.min(totalAllTime - totalAtResume, t.duration * 2)
-    : Math.min(t.duration, t.duration);
-  const earned = Math.max(1, Math.round(earnedSecs / 60));
+  // Award coins based on time actually ticked down on THIS task, not totalAtResume/
+  // totalAllTime — those track lifetime/daily stats and stay stale across a task
+  // that's completed without ever being started, which previously fell through to
+  // awarding the full duration as if it had been run to completion.
+  const elapsedSecs = (total - left) + overSecs;
+  const earnedSecs  = Math.min(elapsedSecs, t.duration * 2);
+  const earned = earnedSecs > 0 ? Math.max(1, Math.round(earnedSecs / 60)) : 0;
   coins += earned; coinsToday += earned; coinsTs = Date.now();
   if (spendingCoins) spendEarned += earned;
   completedToday++;

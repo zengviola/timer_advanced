@@ -272,6 +272,11 @@
     .btn-cancel { background: var(--surf2); color: var(--muted); }
     .btn-save   { background: var(--once); color: #fff; }
 
+    /* ── Coin Alarm Modal ── */
+    .alarm-icon { font-size: 2.4rem; text-align: center; animation: alarmPulse 1s infinite; }
+    @keyframes alarmPulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+    .btn-confirm-alarm { background: var(--danger); color: #fff; width: 100%; }
+
     .edit-btn {
       border: none; background: var(--surf2); color: var(--muted); cursor: pointer;
       font-size: 0.8rem; padding: 3px 7px; border-radius: 4px;
@@ -1383,6 +1388,7 @@ function startSpendCoins() {
     alert('没有金币可以使用，完成任务后再来！');
     return false;
   }
+  ensureAudioCtx();  // unlock audio now, on this user gesture, so the later un-gestured alarm can actually play
   spendingCoins   = true;
   spendStartAt    = Date.now();
   spendDeducted   = 0;
@@ -1392,6 +1398,42 @@ function startSpendCoins() {
   updateStats(); save();
   spendInterval = setInterval(spendTick, 1000);
   return true;
+}
+
+// ── Coin Alarm ──
+// Sounds continuously until the user clicks 知道了 — no timeout, no backdrop-click dismiss.
+let audioCtx      = null;
+let alarmInterval = null;
+
+function ensureAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function beep() {
+  try {
+    const ctx = ensureAudioCtx();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'square'; o.frequency.value = 880;
+    g.gain.value = 0.25;
+    o.connect(g); g.connect(ctx.destination);
+    o.start();
+    o.stop(ctx.currentTime + 0.25);
+  } catch (e) { /* audio unavailable (e.g. context never unlocked) — alarm still shows visually */ }
+}
+
+function startCoinAlarm() {
+  document.getElementById('coinAlarmModal').style.display = 'flex';
+  beep();
+  clearInterval(alarmInterval);
+  alarmInterval = setInterval(beep, 800);
+}
+
+function confirmCoinAlarm() {
+  clearInterval(alarmInterval); alarmInterval = null;
+  document.getElementById('coinAlarmModal').style.display = 'none';
 }
 
 // "改为消耗": the seconds already ticked on this task (countdown used + any
@@ -1437,6 +1479,7 @@ function spendTick() {
     clearInterval(spendInterval); spendInterval = null;
     spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
     spendGross = 0; spendEarned = 0;
+    startCoinAlarm();
   }
   updateStats();
 }
@@ -2432,6 +2475,17 @@ initCloud();
     <div class="modal-btns">
       <button class="btn-cancel" onclick="closeModal()">取消</button>
       <button class="btn-save"   onclick="saveModal()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Coin Alarm Modal: stays up, sounding, until manually confirmed -->
+<div id="coinAlarmModal" class="modal-backdrop" style="display:none">
+  <div class="modal-box">
+    <div class="alarm-icon">🔔</div>
+    <div class="modal-title" style="text-align:center">金币已用完！</div>
+    <div class="modal-btns">
+      <button class="btn-confirm-alarm" onclick="confirmCoinAlarm()">知道了</button>
     </div>
   </div>
 </div>

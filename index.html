@@ -1458,6 +1458,7 @@ function convertToSpend() {
   refreshDisp();
   updateStats();
   save();
+  if (minutes > 0 && coins <= 0) startCoinAlarm();
 }
 
 // Timestamp-based, not a plain counter — mobile browsers throttle/suspend

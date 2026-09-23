@@ -368,7 +368,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v71</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v72</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -628,6 +628,7 @@ let lastDay    = todayStr();
 let overSecs       = 0;     // seconds past deadline (0 = not overtime)
 let timerStartedAt = null;  // Date.now() when current run began
 let leftAtResume   = null;  // left value when run began
+let overSecsAtResume = 0;   // overSecs already accrued before this run segment began
 let totalAtResume  = null;  // totalAllTime when run began
 let todayAtResume  = null;  // totalToday when run began
 let alarmFired     = false; // prevent repeat alarm animation
@@ -954,11 +955,12 @@ function pushTop(task) {
 
 // ── Timer ──
 function recordStart() {
-  timerStartedAt = Date.now();
-  leftAtResume   = left;
-  totalAtResume  = totalAllTime;
-  todayAtResume  = totalToday;
-  alarmFired     = false;
+  timerStartedAt   = Date.now();
+  leftAtResume     = left;
+  overSecsAtResume = overSecs;
+  totalAtResume    = totalAllTime;
+  todayAtResume    = totalToday;
+  alarmFired       = false;
 }
 
 function loadNext(autoStart = false) {
@@ -1037,7 +1039,7 @@ function tick() {
     totalAllTime = totalAtResume + elapsed;
     totalToday   = todayAtResume + elapsed;
     left     = 0;
-    overSecs = -newLeft;
+    overSecs = overSecsAtResume - newLeft;  // add this segment's overtime onto whatever had already accrued before a pause/resume
     if (!alarmFired) {
       alarmFired = true;
       timerSec.classList.add('alarm');

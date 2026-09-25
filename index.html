@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>任务计时器</title>
   <style>
     :root {
@@ -29,6 +29,7 @@
       min-height: 100vh;
       display: flex; flex-direction: column; align-items: center;
       padding: 28px 16px 60px;
+      touch-action: manipulation;  /* blocks double-tap-to-zoom; per-element touch-action (e.g. drag handles) still overrides */
     }
 
     .app { width: 100%; max-width: 500px; display: flex; flex-direction: column; gap: 20px; }
@@ -192,10 +193,11 @@
     .fg { display: flex; flex-direction: column; gap: 5px; flex: 1; }
     .fl { font-size: 0.75rem; font-weight: 600; color: var(--muted); }
 
-    input[type=text], input[type=number], select {
+    input[type=text], input[type=number], input[type=password], select {
       background: var(--surf2); border: 1.5px solid transparent;
       border-radius: 8px; padding: 9px 12px; color: var(--text);
-      font-size: 0.9rem; outline: none; font-family: inherit; width: 100%;
+      /* 16px min — iOS Safari auto-zooms the page on focus for any input under that */
+      font-size: 1rem; outline: none; font-family: inherit; width: 100%;
       transition: border-color .15s;
     }
     input:focus, select:focus { border-color: var(--once); }
@@ -368,7 +370,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v72</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v73</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 

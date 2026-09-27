@@ -370,7 +370,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v73</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v74</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -596,6 +596,16 @@
       </div>
     </div>
 
+    <!-- Time-of-day restriction -->
+    <div class="fg">
+      <label class="fl">出现的时间</label>
+      <div class="type-toggle" id="timeSlotToggle">
+        <button class="type-btn on on-once" data-slot="" onclick="setSelTimeSlot('')">不限</button>
+        <button class="type-btn" data-slot="6pm以后" onclick="setSelTimeSlot('6pm以后')">6pm以后</button>
+        <button class="type-btn" data-slot="其他" onclick="setSelTimeSlot('其他')">其他</button>
+      </div>
+    </div>
+
     <!-- Big trigger config -->
     <div class="trig-cfg" id="trigCfg" style="display:none">
       <div class="trig-title">大循环 · 每隔多少次小循环触发一次</div>
@@ -657,6 +667,7 @@ let _lastQueueSnap = null; // internal: snapshot used by save() to detect whethe
 let smallCount    = 0;   // cumulative small-cycle completions (drives big-cycle triggers)
 let locState      = 'work'; // 'home_before' | 'work' | 'home_after' — current location
 let heldTasks     = [];    // tasks pulled out of the queue because their tag doesn't match locState
+let timeHeldTasks = [];    // tasks pulled out of the queue because their timeSlot doesn't match the current clock time
 const LOC_ORDER = ['home_before', 'work', 'home_after'];
 const LOC_LABEL = { home_before: '家 · 上班中', work: '公司', home_after: '家 · 下班后' };
 const LOC_SUB   = { home_before: '其他任务已隐藏', work: '家庭任务已隐藏', home_after: '其他任务已隐藏' };
@@ -680,6 +691,17 @@ function tagPills(tags) {
 }
 let selTags       = [];    // selected tags in add form (multi-select)
 let selDays       = [];    // selected days for add form ([] = every day)
+let selTimeSlot   = '';    // '' | '6pm以后' | '其他' — selected time-of-day restriction in add form (single-select)
+
+// A task with no timeSlot always shows; '6pm以后' only shows from 18:00 on, '其他' only before that.
+function isEvening() { return new Date().getHours() >= 18; }
+function timeSlotVisible(slot) {
+  if (!slot) return true;
+  return slot === '6pm以后' ? isEvening() : !isEvening();
+}
+function timeSlotPill(slot) {
+  return slot ? `<span class="pill">🕕 ${esc(slot)}</span>` : '';
+}
 let dayHeldTasks  = [];    // tasks held because today isn't their day
 
 // DOM
@@ -818,6 +840,32 @@ function reconcileLocVisibility() {
   }
 }
 
+// Same idea as reconcileLocVisibility(), but for the 6pm boundary instead of location —
+// called on load/cloud-sync and on the existing every-minute check, since (unlike
+// location) the clock crosses that boundary on its own while the app just sits open.
+// Returns whether anything actually moved, so periodic callers only re-render when needed.
+function reconcileTimeVisibility() {
+  let changed = false;
+  const stillVisible = [];
+  tasks.forEach(t => {
+    if (timeSlotVisible(t.timeSlot)) stillVisible.push(t);
+    else { timeHeldTasks.push(t); changed = true; }
+  });
+  tasks = stillVisible;
+  const stillHeld = [];
+  timeHeldTasks.forEach(t => {
+    if (timeSlotVisible(t.timeSlot)) { pushTop(t); changed = true; }
+    else stillHeld.push(t);
+  });
+  timeHeldTasks = stillHeld;
+  if (cur && !timeSlotVisible(cur.timeSlot)) {
+    clearInterval(ticker); running = false; overSecs = 0; timerStartedAt = null;
+    cur = null;
+    changed = true;
+  }
+  return changed;
+}
+
 function toggleContext() {
   locState = LOC_ORDER[(LOC_ORDER.indexOf(locState) + 1) % LOC_ORDER.length];
   // reconcileLocVisibility() clears `cur` itself if it no longer belongs at the new location
@@ -852,9 +900,12 @@ function addTask() {
     const newTask = { id: uid++, name, duration: mins * 60, type: selType, count: 0 };
     if (selTags.length > 0) newTask.tags = selTags.slice();
     if (selDays.length > 0) newTask.days = selDays.slice();
-    // If tagged task added while its tags don't match current location, hold it aside
+    if (selTimeSlot) newTask.timeSlot = selTimeSlot;
+    // If tagged task added while its tags/time don't match right now, hold it aside
     if (newTask.tags && !tagsVisible(newTask.tags, locState)) {
       heldTasks.push(newTask);
+    } else if (newTask.timeSlot && !timeSlotVisible(newTask.timeSlot)) {
+      timeHeldTasks.push(newTask);
     } else if (!taskActiveToday(newTask)) {
       dayHeldTasks.push(newTask);
     } else {
@@ -1083,6 +1134,7 @@ document.addEventListener('visibilitychange', () => {
   }
   if (running) tick();
   if (spendingCoins) spendTick();
+  if (reconcileTimeVisibility()) { if (!cur) loadNext(); else renderQ(); save(); }
 });
 
 function doComplete() {
@@ -1544,6 +1596,7 @@ function renderTimer() {
     <div class="cur-meta">
       <span class="badge b-${cur.type}" style="cursor:pointer" onclick="openEditModal(${cur.id},'queue')" title="点击修改">${tn(cur.type)}</span>
       ${tagPills(cur.tags)}
+      ${timeSlotPill(cur.timeSlot)}
       ${loop}${dailyCount}
       <button class="edit-btn" onclick="openEditModal(${cur.id},'queue')" style="font-size:0.8rem">✏ 修改</button>
     </div>
@@ -1608,6 +1661,7 @@ function renderQ() {
           <span>${mins} 分钟 <button class="edit-btn" onclick="openEditModal(${t.id},'queue')">✏</button></span>
           <span class="badge b-${t.type}" style="cursor:pointer" onclick="openEditModal(${t.id},'queue')" title="点击修改类型/时长">${tn(t.type)}</span>
           ${tagPills(t.tags)}
+          ${timeSlotPill(t.timeSlot)}
           ${lp}${dayP}${topTag}
         </div>
       </div>
@@ -1769,6 +1823,12 @@ function toggleSelDay(d) {
     b.classList.toggle('on', selDays.includes(parseInt(b.dataset.d)));
   });
 }
+function setSelTimeSlot(slot) {
+  selTimeSlot = slot;
+  document.querySelectorAll('#timeSlotToggle .type-btn').forEach(b => {
+    b.className = 'type-btn' + (b.dataset.slot === slot ? ' on on-once' : '');
+  });
+}
 function checkDayHeld() {
   const active = dayHeldTasks.filter(t => taskActiveToday(t));
   if (active.length === 0) return;
@@ -1826,6 +1886,7 @@ function save() {
     localStorage.setItem('tt_locState',   locState);
     localStorage.setItem('tt_smallCount', smallCount);
     localStorage.setItem('tt_dayHeld',    JSON.stringify(dayHeldTasks));
+    localStorage.setItem('tt_timeHeld',   JSON.stringify(timeHeldTasks));
     localStorage.setItem('tt_lastDay',    lastDay);
   } catch(_) {}
   debouncePush();
@@ -1886,6 +1947,8 @@ function load() {
     if (sh) shelvedTasks = JSON.parse(sh);
     const dh = localStorage.getItem('tt_dayHeld');
     if (dh) dayHeldTasks = JSON.parse(dh);
+    const th = localStorage.getItem('tt_timeHeld');
+    if (th) timeHeldTasks = JSON.parse(th);
     const tts = localStorage.getItem('tt_tasksTs');
     if (tts) tasksTs = parseInt(tts) || 0;
     if (l)  _savedLeft  = parseInt(l);
@@ -1932,7 +1995,7 @@ function migrateTaskTags(t) {
   }
 }
 function migrateAllTags() {
-  [tasks, bigTasks, dailyDefs, done, heldTasks, dayHeldTasks, shelvedTasks].forEach(arr => arr.forEach(migrateTaskTags));
+  [tasks, bigTasks, dailyDefs, done, heldTasks, dayHeldTasks, timeHeldTasks, shelvedTasks].forEach(arr => arr.forEach(migrateTaskTags));
   skippedTasks.forEach(s => migrateTaskTags(s.task));
 }
 
@@ -1941,6 +2004,10 @@ setInterval(() => {
   if (todayStr() !== lastDay) dailyRollover();
   checkDailyTasks();
   checkDayHeld();
+  if (reconcileTimeVisibility()) {
+    if (!cur) loadNext(); else renderQ();
+    save();
+  }
 }, 60 * 1000);
 
 // ── Edit Modal ──
@@ -1949,6 +2016,7 @@ let editingSrc = null;
 let modalType  = null;
 let modalTags  = [];
 let modalDays  = [];
+let modalTimeSlot = '';
 let modalNameSegs = [];    // '/'-separated segments of the name being edited, reorderable via ▲▼
 
 function findTask(id, src) {
@@ -2008,6 +2076,12 @@ function setModalDays(days) {
     b.classList.toggle('on', modalDays.includes(parseInt(b.dataset.d)));
   });
 }
+function setModalTimeSlot(slot) {
+  modalTimeSlot = slot || '';
+  document.querySelectorAll('#modalTimeSlotToggle .type-btn').forEach(b => {
+    b.className = 'type-btn' + (b.dataset.slot === modalTimeSlot ? ' on on-once' : '');
+  });
+}
 
 function setModalNameSegs(name) {
   modalNameSegs = name.split('/');
@@ -2048,6 +2122,7 @@ function openEditModal(id, src) {
   typeRow.style.display = (src === 'queue' || src === 'done') ? 'flex' : 'none';
   setModalType(task.type);
   setModalTags(task.tags);
+  setModalTimeSlot(task.timeSlot);
   setModalDays(daysTarget(task).days);
   const trigN = document.getElementById('modalTrigN');
   if (trigN) trigN.value = isNaN(task.trigEvery) ? 20 : (task.trigEvery || 20);
@@ -2074,18 +2149,22 @@ function saveModal() {
     if (dTask) {
       if (modalDays.length > 0) dTask.days = modalDays.slice(); else delete dTask.days;
     }
-    // Apply tag change
+    // Apply tag / time-of-day change
     if (editingSrc === 'queue') {
       task.tags = modalTags.length > 0 ? modalTags.slice() : undefined;
       if (!task.tags) delete task.tags;
-      // If new tags no longer match current location, pull out of queue
-      if (task.tags && !tagsVisible(task.tags, locState)) {
+      task.timeSlot = modalTimeSlot || undefined;
+      if (!task.timeSlot) delete task.timeSlot;
+      // If the new tags/time no longer match right now, pull out of queue into the
+      // matching held array (whichever check actually failed)
+      if (!tagsVisible(task.tags, locState) || !timeSlotVisible(task.timeSlot)) {
         tasks = tasks.filter(t => t.id !== task.id);
-        heldTasks.push(task);
+        if (!tagsVisible(task.tags, locState)) heldTasks.push(task);
+        else timeHeldTasks.push(task);
         if (cur && cur.id === task.id) { clearInterval(ticker); running = false; overSecs = 0; cur = null; loadNext(); }
         closeModal(); renderAll(); save(); return;
       }
-      // If new tag matches (or has no tag), nothing to do here (task stays in queue)
+      // If everything still matches, nothing to do here (task stays in queue)
     }
     const oldType = task.type;
     const newType = (editingSrc === 'queue' || editingSrc === 'done') ? modalType : oldType;
@@ -2154,6 +2233,7 @@ function closeModal() {
   editingId = editingSrc = modalType = null;
   modalTags = [];
   modalDays = [];
+  modalTimeSlot = '';
   modalNameSegs = [];
 }
 
@@ -2210,7 +2290,7 @@ function getCloudPayload() {
     completedToday, completedTodayDate: todayStr(),
     coins, coinsToday, coinsTodayDate: todayStr(), coinsTs,
     skippedTasks, shelvedTasks, tasksTs,
-    heldTasks, locState, smallCount,
+    heldTasks, timeHeldTasks, locState, smallCount,
     left, total, curId: cur ? cur.id : -1,
     savedDate: todayStr()
   });
@@ -2236,6 +2316,7 @@ function applyCloudPayload(raw) {
         // Legacy cloud payload from before the 3-state location split
         heldTasks = [...(d.homeTasks || []), ...(d.workTasks || [])];
       }
+      if (d.timeHeldTasks !== undefined) timeHeldTasks = d.timeHeldTasks;
       tasksTs = Math.max(d.tasksTs || 0, tasksTs);
     }
     if (d.done       !== undefined) done         = d.done;
@@ -2264,6 +2345,7 @@ function applyCloudPayload(raw) {
     if (d.curId      !== undefined) _savedCurId  = d.curId;
     migrateAllTags();
     reconcileLocVisibility();
+    reconcileTimeVisibility();
     renderContext();
     checkDailyTasks();
     if (tasks.length > 0) loadNext();
@@ -2416,6 +2498,7 @@ function initCloud() {
 load();
 if (todayStr() !== lastDay) dailyRollover();  // catch up if the app was closed across midnight
 reconcileLocVisibility();
+reconcileTimeVisibility();
 renderContext();
 renderSeason();
 checkDailyTasks();
@@ -2468,6 +2551,14 @@ initCloud();
         <button class="day-btn" data-d="5" onclick="toggleModalDay(5)">五</button>
         <button class="day-btn" data-d="6" onclick="toggleModalDay(6)">六</button>
         <button class="day-btn" data-d="0" onclick="toggleModalDay(0)">日</button>
+      </div>
+    </div>
+    <div class="fg">
+      <label class="fl">出现的时间</label>
+      <div class="type-toggle" id="modalTimeSlotToggle">
+        <button class="type-btn" data-slot="" onclick="setModalTimeSlot('')">不限</button>
+        <button class="type-btn" data-slot="6pm以后" onclick="setModalTimeSlot('6pm以后')">6pm以后</button>
+        <button class="type-btn" data-slot="其他" onclick="setModalTimeSlot('其他')">其他</button>
       </div>
     </div>
     <div class="fg" id="modalTrigRow" style="display:none">

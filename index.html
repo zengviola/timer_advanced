@@ -370,7 +370,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v76</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v77</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -2149,6 +2149,9 @@ function saveModal() {
     const dTask = daysTarget(task);
     if (dTask) {
       if (modalDays.length > 0) dTask.days = modalDays.slice(); else delete dTask.days;
+      // Daily instances only self-prune/inject on the periodic check (up to 60s later) —
+      // re-check now so a restriction change takes effect on Save, not up to a minute after
+      if (dTask.type === 'daily') checkDailyTasks();
     }
     // Apply tag / time-of-day change
     if (editingSrc === 'queue') {

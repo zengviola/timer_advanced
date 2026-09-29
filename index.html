@@ -370,7 +370,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v74</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v75</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -1166,8 +1166,9 @@ function doComplete() {
     if (t.dayCountDate !== _td) { t.dayCount = 0; t.dayCountDate = _td; }
     t.dayCount = (t.dayCount || 0) + 1;
     if (!taskActiveToday(t)) dayHeldTasks.push(t);
-    else if (tagsVisible(t.tags, locState)) tasks.push(t);
-    else heldTasks.push(t);
+    else if (!tagsVisible(t.tags, locState)) heldTasks.push(t);
+    else if (!timeSlotVisible(t.timeSlot)) timeHeldTasks.push(t);
+    else tasks.push(t);
     checkTriggers();
 
   } else if (t.type === 'big') {

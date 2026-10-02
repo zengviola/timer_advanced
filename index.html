@@ -370,7 +370,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v78</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v79</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -1219,10 +1219,13 @@ function checkTriggers() {
 
 function doReset() {
   if (!cur) return;
-  clearInterval(ticker); running = false;
+  clearInterval(ticker); running = false; timerStartedAt = null;
+  overSecs = 0;  // refreshDisp() shows the overtime display whenever this is >0, which
+                 // otherwise keeps covering up the freshly-reset countdown underneath
   left = cur.duration; total = cur.duration;
   btnSP.textContent = '开始';
   refreshDisp();
+  save();
 }
 
 function skipTask() {

@@ -370,7 +370,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v77</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v78</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -657,6 +657,8 @@ let spendDeducted = 0;
 let spendStartCoins = 0;  // coins balance at the moment the current spend session began
 let spendGross    = 0;   // coins actually taken by the spend timer itself this session (ignores earnings)
 let spendEarned   = 0;   // coins earned by completing tasks while this spend session is active
+let spendAlarmFired = false;  // the coin alarm has already fired for this spend session (don't repeat it every tick)
+const SPEND_OVERDRAFT_FLOOR = -120;  // keep deducting past 0 (2h worth at 1 coin/min) rather than stopping dead at 0
 let _savedLeft    = null;
 let _savedTotal   = null;
 let _savedCurId   = null;
@@ -1455,6 +1457,7 @@ function startSpendCoins() {
   spendStartCoins = coins;
   spendGross      = 0;
   spendEarned     = 0;
+  spendAlarmFired = false;
   updateStats(); save();
   spendInterval = setInterval(spendTick, 1000);
   return true;
@@ -1494,6 +1497,14 @@ function startCoinAlarm() {
 function confirmCoinAlarm() {
   clearInterval(alarmInterval); alarmInterval = null;
   document.getElementById('coinAlarmModal').style.display = 'none';
+  // If a spend session is what triggered this (vs. a one-off 改为消耗 conversion, which
+  // has no ongoing session to stop), acknowledging the alarm is what ends the overdraft.
+  if (spendingCoins) {
+    clearInterval(spendInterval); spendInterval = null;
+    spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
+    spendGross = 0; spendEarned = 0;
+    updateStats(); save();
+  }
 }
 
 // "改为消耗": the seconds already ticked on this task (countdown used + any
@@ -1529,17 +1540,18 @@ function spendTick() {
   const elapsedMin = Math.floor((Date.now() - spendStartAt) / 60000);
   const due = elapsedMin - spendDeducted;
   if (due > 0) {
-    for (let i = 0; i < due && coins > 0; i++) {
+    // Keep deducting past 0 instead of stopping dead — the alarm (fired once, below) is
+    // what's supposed to get the user's attention, not a hard stop they might not see.
+    // Still floored, so an alarm ignored for hours doesn't run the balance away forever.
+    for (let i = 0; i < due && coins > SPEND_OVERDRAFT_FLOOR; i++) {
       coins--; coinsToday = Math.max(0, coinsToday - 1); spendGross++;
     }
     spendDeducted = elapsedMin;
     coinsTs = Date.now();
     save();
   }
-  if (coins <= 0) {
-    clearInterval(spendInterval); spendInterval = null;
-    spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
-    spendGross = 0; spendEarned = 0;
+  if (coins <= 0 && !spendAlarmFired) {
+    spendAlarmFired = true;
     startCoinAlarm();
   }
   updateStats();

@@ -376,7 +376,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v82</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v83</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -2274,6 +2274,14 @@ function closeModal() {
 let cloudToken  = '';
 let cloudGistId = '';
 let syncTimer   = null;
+// While an initial pull is outstanding, auto-push must stay silent — otherwise a slow
+// first sync (e.g. findGistId() paging through many gists) can lose the race against
+// the 3s save debounce and push this device's still-empty local state over the real
+// cloud data, permanently overwriting it with an empty queue that every device then
+// happily re-accepts (it carries a fresh tasksTs, so it looks newest to everyone).
+// Computed synchronously here (not inside initCloud()) because init-time calls like
+// dailyRollover() can call save() before initCloud() ever runs.
+let cloudReady  = !localStorage.getItem('tt_cloud_token');
 
 const syncChip = document.getElementById('syncChip');
 const cloudCfg = document.getElementById('cloudCfg');
@@ -2304,6 +2312,7 @@ function saveCloudToken() {
   cloudToken = inp;
   localStorage.setItem('tt_cloud_token', cloudToken);
   cloudCfg.style.display = 'none';
+  cloudReady = false;
   loadFromCloud();  // pull first; creates new gist if none found
 }
 
@@ -2405,7 +2414,7 @@ async function findGistId() {
 }
 
 async function loadFromCloud() {
-  if (!cloudToken) return;
+  if (!cloudToken) { cloudReady = true; return; }
   setChip('syncing', '↻ 同步中…');
   try {
     // Always search for the gist by name (works across devices/domains)
@@ -2433,6 +2442,10 @@ async function loadFromCloud() {
   } catch(e) {
     console.error('Cloud load error', e);
     setChip('error', '⚠ 同步失败');
+  } finally {
+    // Whether it succeeded, failed, or fell through to pushToCloud() above, the initial
+    // pull attempt is resolved — safe to let subsequent local edits auto-push again.
+    cloudReady = true;
   }
 }
 
@@ -2471,6 +2484,7 @@ async function pushToCloud() {
 }
 
 function debouncePush() {
+  if (!cloudReady) return;  // an initial cloud pull is still in flight — don't push over it
   clearTimeout(syncTimer);
   syncTimer = setTimeout(pushToCloud, 3000);
 }
@@ -2519,6 +2533,7 @@ function initCloud() {
   cloudToken  = localStorage.getItem('tt_cloud_token') || '';
   cloudGistId = localStorage.getItem('tt_cloud_gist')  || '';
   if (cloudToken) {
+    cloudReady = false;  // hold off auto-push from init-time save() calls until this pull settles
     setChip('syncing', '↻ 同步中…');
     loadFromCloud();
     setInterval(pollCmd, 15000);

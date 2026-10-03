@@ -376,11 +376,11 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v81</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v82</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
-  <div class="debt-warning" id="coinDebtWarning" style="display:none">🚫 金币为负数，不可以启动游戏！！！</div>
+  <div class="debt-warning" id="coinDebtWarning" style="display:none">🚫 金币不足，不可以启动游戏！！！</div>
 
   <!-- Cloud Config -->
   <div class="cloud-cfg" id="cloudCfg" style="display:none">
@@ -667,6 +667,7 @@ let spendGross    = 0;   // coins actually taken by the spend timer itself this 
 let spendEarned   = 0;   // coins earned by completing tasks while this spend session is active
 let spendAlarmFired = false;  // the coin alarm has already fired for this spend session (don't repeat it every tick)
 const SPEND_OVERDRAFT_FLOOR = -120;  // keep deducting past 0 (2h worth at 1 coin/min) rather than stopping dead at 0
+const COIN_PLAY_MIN = 5;  // below this balance (negative included), starting anything is blocked
 let _savedLeft    = null;
 let _savedTotal   = null;
 let _savedCurId   = null;
@@ -1076,7 +1077,7 @@ function closeBrushReminder() {
 
 function startPause() {
   if (!cur) return;
-  if (!running && coins < 0) { alert('不可以启动游戏！！！'); return; }
+  if (!running && coins < COIN_PLAY_MIN) { alert('金币不足，不可以启动游戏！！！'); return; }
   running = !running;
   if (running) {
     recordStart();
@@ -1421,13 +1422,13 @@ function updateStats() {
   document.getElementById('statCoins').textContent    = coinsToday;
   document.getElementById('statCoinsSub').textContent = `累计 ${coins} · 可消耗 ${fmtDur(coins * 60000)}`;
   document.getElementById('btnStartSpendDur').textContent = coins > 0 ? `(${fmtDur(coins * 60000)})` : '';
-  const inDebt = coins < 0;
-  document.getElementById('coinDebtWarning').style.display = inDebt ? 'block' : 'none';
-  btnSP.style.opacity = inDebt && !running ? '0.45' : '';
-  btnSP.style.cursor   = inDebt && !running ? 'not-allowed' : '';
+  const coinsTooLow = coins < COIN_PLAY_MIN;
+  document.getElementById('coinDebtWarning').style.display = coinsTooLow ? 'block' : 'none';
+  btnSP.style.opacity = coinsTooLow && !running ? '0.45' : '';
+  btnSP.style.cursor   = coinsTooLow && !running ? 'not-allowed' : '';
   const spendBtn = document.getElementById('btnStartSpend');
-  spendBtn.style.opacity = inDebt ? '0.45' : '';
-  spendBtn.style.cursor  = inDebt ? 'not-allowed' : '';
+  spendBtn.style.opacity = coinsTooLow ? '0.45' : '';
+  spendBtn.style.cursor  = coinsTooLow ? 'not-allowed' : '';
   document.getElementById('coinRow').classList.toggle('spending', spendingCoins);
   document.getElementById('btnStartSpend').style.display    = spendingCoins ? 'none' : 'inline-block';
   const detail = document.getElementById('coinSpendDetail');
@@ -1465,11 +1466,7 @@ function toggleSpendCoins() {
 
 function startSpendCoins() {
   if (spendingCoins) return;
-  if (coins < 0) { alert('不可以启动游戏！！！'); return false; }
-  if (coins <= 0 && coinsToday <= 0) {
-    alert('没有金币可以使用，完成任务后再来！');
-    return false;
-  }
+  if (coins < COIN_PLAY_MIN) { alert('金币不足，不可以启动游戏！！！'); return false; }
   ensureAudioCtx();  // unlock audio now, on this user gesture, so the later un-gestured alarm can actually play
   spendingCoins   = true;
   spendStartAt    = Date.now();

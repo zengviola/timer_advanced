@@ -36,6 +36,12 @@
     .app-title { font-size: 1.4rem; font-weight: 800; text-align: center; }
     .app-version { font-size: 0.68rem; font-weight: 700; color: var(--muted); vertical-align: super; margin-left: 2px; }
 
+    .debt-warning {
+      background: rgba(239,68,68,.15); color: var(--danger);
+      border: 1px solid rgba(239,68,68,.4); border-radius: 10px;
+      padding: 10px 14px; font-size: 0.85rem; font-weight: 700; text-align: center;
+    }
+
     /* ── Timer ── */
     .timer-section {
       background: var(--surf); border-radius: var(--r);
@@ -370,9 +376,11 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v80</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v81</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
+
+  <div class="debt-warning" id="coinDebtWarning" style="display:none">🚫 金币为负数，不可以启动游戏！！！</div>
 
   <!-- Cloud Config -->
   <div class="cloud-cfg" id="cloudCfg" style="display:none">
@@ -1413,6 +1421,13 @@ function updateStats() {
   document.getElementById('statCoins').textContent    = coinsToday;
   document.getElementById('statCoinsSub').textContent = `累计 ${coins} · 可消耗 ${fmtDur(coins * 60000)}`;
   document.getElementById('btnStartSpendDur').textContent = coins > 0 ? `(${fmtDur(coins * 60000)})` : '';
+  const inDebt = coins < 0;
+  document.getElementById('coinDebtWarning').style.display = inDebt ? 'block' : 'none';
+  btnSP.style.opacity = inDebt && !running ? '0.45' : '';
+  btnSP.style.cursor   = inDebt && !running ? 'not-allowed' : '';
+  const spendBtn = document.getElementById('btnStartSpend');
+  spendBtn.style.opacity = inDebt ? '0.45' : '';
+  spendBtn.style.cursor  = inDebt ? 'not-allowed' : '';
   document.getElementById('coinRow').classList.toggle('spending', spendingCoins);
   document.getElementById('btnStartSpend').style.display    = spendingCoins ? 'none' : 'inline-block';
   const detail = document.getElementById('coinSpendDetail');

@@ -370,7 +370,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v79</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v80</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -1068,6 +1068,7 @@ function closeBrushReminder() {
 
 function startPause() {
   if (!cur) return;
+  if (!running && coins < 0) { alert('不可以启动游戏！！！'); return; }
   running = !running;
   if (running) {
     recordStart();
@@ -1449,6 +1450,7 @@ function toggleSpendCoins() {
 
 function startSpendCoins() {
   if (spendingCoins) return;
+  if (coins < 0) { alert('不可以启动游戏！！！'); return false; }
   if (coins <= 0 && coinsToday <= 0) {
     alert('没有金币可以使用，完成任务后再来！');
     return false;

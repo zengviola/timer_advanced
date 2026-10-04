@@ -379,7 +379,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v85</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v86</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -2542,7 +2542,7 @@ function executeCmd(cmd) {
   }
 }
 
-async function pollCmd() {
+async function pollCloud() {
   if (!cloudToken || !cloudGistId) return;
   try {
     const res = await fetch(`https://api.github.com/gists/${cloudGistId}`, {
@@ -2550,8 +2550,24 @@ async function pollCmd() {
     });
     if (!res.ok) return;
     const gist = await res.json();
-    const raw = gist.files?.['timer_cmd.json']?.content;
-    if (raw) executeCmd(JSON.parse(raw));
+    const cmdRaw = gist.files?.['timer_cmd.json']?.content;
+    if (cmdRaw) executeCmd(JSON.parse(cmdRaw));
+
+    // The initial pull (loadFromCloud) only ever runs once, at page load/token entry —
+    // an already-open tab otherwise never learns about a task another device added or
+    // changed. Piggyback a queue/coins re-check onto this same already-scheduled fetch
+    // (no extra request). Skipped entirely unless something is actually newer, and while
+    // a task is running — applyCloudPayload()'s loadNext() unconditionally stops the
+    // ticker, which would silently interrupt an active countdown for an unrelated change
+    // elsewhere in the queue. It catches up on the very next poll once nothing is running.
+    const dataRaw = gist.files?.['timer_data.json']?.content;
+    if (dataRaw && !running) {
+      const d = JSON.parse(dataRaw);
+      if ((d.tasksTs || 0) > tasksTs || (d.coinsTs || 0) > coinsTs) {
+        applyCloudPayload(dataRaw);
+        setChip('ok', '☁ 已同步');
+      }
+    }
   } catch(e) {}
 }
 
@@ -2575,7 +2591,7 @@ function initCloud() {
     cloudReady = false;  // hold off auto-push from init-time save() calls until this pull settles
     setChip('syncing', '↻ 同步中…');
     loadFromCloud();
-    setInterval(pollCmd, 15000);
+    setInterval(pollCloud, 15000);
   } else {
     setChip('idle', '☁ 未配置');
   }

@@ -379,7 +379,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v86</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v87</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -975,12 +975,38 @@ function cutIn() {
   save();
 }
 
+// An instance can be sitting in tasks (visible), or held aside awaiting its location/time
+// window (heldTasks/timeHeldTasks) — checking only `tasks` let a daily def with a 出现的时间
+// restriction get re-injected fresh every single check while it sat held, piling up
+// duplicates that all flooded into the queue together the moment it became visible again.
+function dailyInstanceExists(defId) {
+  return tasks.some(t => t.dailyId === defId)
+    || heldTasks.some(t => t.dailyId === defId)
+    || timeHeldTasks.some(t => t.dailyId === defId);
+}
+
+// One-time cleanup for duplicates piled up by the bug dailyInstanceExists() now prevents —
+// a daily def's instance could end up cloned once per check cycle while held aside for its
+// 出现的时间 window, all flooding into the queue together once it became visible.
+function dedupeDailyInstances() {
+  const seen = new Set();
+  const dedupe = arr => arr.filter(t => {
+    if (t.type !== 'daily') return true;
+    if (seen.has(t.dailyId)) return false;
+    seen.add(t.dailyId);
+    return true;
+  });
+  tasks         = dedupe(tasks);
+  heldTasks     = dedupe(heldTasks);
+  timeHeldTasks = dedupe(timeHeldTasks);
+}
+
 // Inject a daily def into the active queue (if not already there and not done today)
 function injectDaily(def) {
   const today = todayStr();
   if (def.lastCompleted === today) return;
   if (!taskActiveToday(def)) return;
-  const alreadyIn = tasks.some(t => t.dailyId === def.id);
+  const alreadyIn = dailyInstanceExists(def.id);
   if (alreadyIn) return;
   const task = { id: uid++, name: def.name, duration: def.duration, type: 'daily', dailyId: def.id, count: def.count };
   pushTop(task);
@@ -1009,7 +1035,7 @@ function checkDailyTasks() {
     if (def.lastCompleted === today) return;
     if (def.skippedToday === today) return;  // skipped for today
     if (!taskActiveToday(def)) return;
-    const alreadyIn = tasks.some(t => t.dailyId === def.id);
+    const alreadyIn = dailyInstanceExists(def.id);
     if (alreadyIn) return;
     const task = { id: uid++, name: def.name, duration: def.duration, type: 'daily', dailyId: def.id, count: def.count };
     pushTop(task);
@@ -2425,6 +2451,7 @@ function applyCloudPayload(raw) {
     if (d.total      !== undefined) _savedTotal  = d.total;
     if (d.curId      !== undefined) _savedCurId  = d.curId;
     migrateAllTags();
+    dedupeDailyInstances();
     reconcileLocVisibility();
     reconcileTimeVisibility();
     renderContext();
@@ -2599,6 +2626,7 @@ function initCloud() {
 
 // ── Init ──
 load();
+dedupeDailyInstances();
 renderSpendDifficultyToggle();
 if (todayStr() !== lastDay) dailyRollover();  // catch up if the app was closed across midnight
 reconcileLocVisibility();

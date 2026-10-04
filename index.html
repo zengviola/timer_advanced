@@ -379,7 +379,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v84</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v85</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -583,7 +583,7 @@
       </div>
       <div class="fg">
         <label class="fl">类型</label>
-        <div class="type-toggle">
+        <div class="type-toggle" id="addTypeToggle">
           <button class="type-btn on on-once"  data-t="once">一次性</button>
           <button class="type-btn"             data-t="small">小循环</button>
           <button class="type-btn"             data-t="big">大循环</button>
@@ -774,11 +774,15 @@ const shelvedList  = document.getElementById('shelvedList');
 const btnRestoreAllShelved = document.getElementById('btnRestoreAllShelved');
 
 // ── Type Toggle ──
-document.querySelector('.type-toggle').addEventListener('click', e => {
+// Scoped to its own id (not just '.type-toggle'/'.type-btn' by class) — several other
+// toggle groups on the page share those classes, and matching by class alone silently
+// binds to whichever happens to come first in the DOM, or cross-contaminates unrelated
+// groups whose buttons also lack a data-t attribute.
+document.getElementById('addTypeToggle').addEventListener('click', e => {
   const b = e.target.closest('.type-btn');
   if (!b) return;
   selType = b.dataset.t;
-  document.querySelectorAll('.type-btn').forEach(x => {
+  document.querySelectorAll('#addTypeToggle .type-btn').forEach(x => {
     x.className = 'type-btn' + (x.dataset.t === selType ? ` on on-${selType}` : '');
   });
   btnAdd.style.background = tc(selType);

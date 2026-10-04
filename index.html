@@ -367,6 +367,9 @@
       font-size: 0.78rem; font-weight: 700; cursor: pointer; font-family: inherit;
       transition: opacity .15s;
     }
+    .spend-diff-row { display: flex; align-items: center; gap: 10px; }
+    #spendDifficultyToggle { font-size: 0.72rem; flex: 1; }
+    #spendDifficultyToggle .type-btn { padding: 5px 2px; }
     .btn-start-spend:hover, .btn-stop-spend:hover { opacity: .85; }
     .btn-start-spend { background: var(--once); color: #fff; }
     .btn-stop-spend  { background: var(--danger); color: #fff; margin-left: auto; }
@@ -376,7 +379,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v83</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v84</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -452,6 +455,14 @@
         <span class="coin-sub" id="statCoinsSub">累计 0</span>
       </div>
       <button class="btn-start-spend" id="btnStartSpend" onclick="toggleSpendCoins()">开始消耗 <span id="btnStartSpendDur"></span></button>
+    </div>
+    <div class="spend-diff-row">
+      <span class="fl">难度</span>
+      <div class="type-toggle" id="spendDifficultyToggle">
+        <button class="type-btn" data-diff="low"  onclick="setSpendDifficulty('low')">低 1:1</button>
+        <button class="type-btn" data-diff="mid"  onclick="setSpendDifficulty('mid')">中 2:1</button>
+        <button class="type-btn" data-diff="high" onclick="setSpendDifficulty('high')">高 3:1</button>
+      </div>
     </div>
     <div class="coin-spend-detail" id="coinSpendDetail" style="display:none">
       <span>开始 <b id="spendStartDisp">0</b></span>
@@ -668,6 +679,8 @@ let spendEarned   = 0;   // coins earned by completing tasks while this spend se
 let spendAlarmFired = false;  // the coin alarm has already fired for this spend session (don't repeat it every tick)
 const SPEND_OVERDRAFT_FLOOR = -120;  // keep deducting past 0 (2h worth at 1 coin/min) rather than stopping dead at 0
 const COIN_PLAY_MIN = 5;  // below this balance (negative included), starting anything is blocked
+let spendDifficulty = 'low';  // 'low' | 'mid' | 'high' — global setting, persists until changed
+const SPEND_RATE = { low: 1, mid: 2, high: 3 };  // coins deducted per elapsed minute while 消耗ing
 let _savedLeft    = null;
 let _savedTotal   = null;
 let _savedCurId   = null;
@@ -1420,8 +1433,9 @@ function updateStats() {
   statTotal.textContent    = fmtTime(totalAllTime);
   statTotalSub.textContent = fmtSub(totalAllTime);
   document.getElementById('statCoins').textContent    = coinsToday;
-  document.getElementById('statCoinsSub').textContent = `累计 ${coins} · 可消耗 ${fmtDur(coins * 60000)}`;
-  document.getElementById('btnStartSpendDur').textContent = coins > 0 ? `(${fmtDur(coins * 60000)})` : '';
+  const spendRate = SPEND_RATE[spendDifficulty] || 1;
+  document.getElementById('statCoinsSub').textContent = `累计 ${coins} · 可消耗 ${fmtDur(coins / spendRate * 60000)}`;
+  document.getElementById('btnStartSpendDur').textContent = coins > 0 ? `(${fmtDur(coins / spendRate * 60000)})` : '';
   const coinsTooLow = coins < COIN_PLAY_MIN;
   document.getElementById('coinDebtWarning').style.display = coinsTooLow ? 'block' : 'none';
   btnSP.style.opacity = coinsTooLow && !running ? '0.45' : '';
@@ -1435,7 +1449,7 @@ function updateStats() {
   if (spendingCoins && spendStartAt) {
     detail.style.display = 'flex';
     document.getElementById('spendStartDisp').textContent    = spendStartCoins;
-    document.getElementById('spendTotalDisp').textContent    = fmtDur(spendStartCoins * 60000);
+    document.getElementById('spendTotalDisp').textContent    = fmtDur(spendStartCoins / spendRate * 60000);
     document.getElementById('spendElapsedDisp').textContent  = fmtDur(Date.now() - spendStartAt);
     document.getElementById('spendGrossDisp').textContent    = spendGross;
     document.getElementById('spendEarnedDisp').textContent   = spendEarned;
@@ -1560,8 +1574,11 @@ function spendTick() {
     // Keep deducting past 0 instead of stopping dead — the alarm (fired once, below) is
     // what's supposed to get the user's attention, not a hard stop they might not see.
     // Still floored, so an alarm ignored for hours doesn't run the balance away forever.
+    const rate = SPEND_RATE[spendDifficulty] || 1;
     for (let i = 0; i < due && coins > SPEND_OVERDRAFT_FLOOR; i++) {
-      coins--; coinsToday = Math.max(0, coinsToday - 1); spendGross++;
+      coins = Math.max(SPEND_OVERDRAFT_FLOOR, coins - rate);
+      coinsToday = Math.max(0, coinsToday - rate);
+      spendGross += rate;
     }
     spendDeducted = elapsedMin;
     coinsTs = Date.now();
@@ -1859,6 +1876,17 @@ function setSelTimeSlot(slot) {
     b.className = 'type-btn' + (b.dataset.slot === slot ? ' on on-once' : '');
   });
 }
+function renderSpendDifficultyToggle() {
+  document.querySelectorAll('#spendDifficultyToggle .type-btn').forEach(b => {
+    b.className = 'type-btn' + (b.dataset.diff === spendDifficulty ? ' on on-once' : '');
+  });
+}
+function setSpendDifficulty(d) {
+  spendDifficulty = d;
+  renderSpendDifficultyToggle();
+  updateStats();
+  save();
+}
 function checkDayHeld() {
   const active = dayHeldTasks.filter(t => taskActiveToday(t));
   if (active.length === 0) return;
@@ -1910,6 +1938,7 @@ function save() {
     localStorage.setItem('tt_spendStartCoins', spendStartCoins);
     localStorage.setItem('tt_spendGross',   spendGross);
     localStorage.setItem('tt_spendEarned',  spendEarned);
+    localStorage.setItem('tt_spendDifficulty', spendDifficulty);
     localStorage.setItem('tt_skipped',   JSON.stringify(skippedTasks));
     localStorage.setItem('tt_shelved',   JSON.stringify(shelvedTasks));
     localStorage.setItem('tt_heldTasks',  JSON.stringify(heldTasks));
@@ -1981,6 +2010,8 @@ function load() {
     if (th) timeHeldTasks = JSON.parse(th);
     const tts = localStorage.getItem('tt_tasksTs');
     if (tts) tasksTs = parseInt(tts) || 0;
+    const sd = localStorage.getItem('tt_spendDifficulty');
+    if (sd && SPEND_RATE[sd]) spendDifficulty = sd;
     if (l)  _savedLeft  = parseInt(l);
     if (tot)_savedTotal = parseInt(tot);
     if (ci) _savedCurId = parseInt(ci);
@@ -2332,7 +2363,7 @@ function getCloudPayload() {
     completedToday, completedTodayDate: todayStr(),
     coins, coinsToday, coinsTodayDate: todayStr(), coinsTs,
     skippedTasks, shelvedTasks, tasksTs,
-    heldTasks, timeHeldTasks, locState, smallCount,
+    heldTasks, timeHeldTasks, locState, smallCount, spendDifficulty,
     left, total, curId: cur ? cur.id : -1,
     savedDate: todayStr()
   });
@@ -2382,6 +2413,10 @@ function applyCloudPayload(raw) {
     if (d.locState   !== undefined) locState     = d.locState;
     else if (d.workMode !== undefined) locState  = d.workMode ? 'work' : 'home_before';
     if (d.smallCount !== undefined) smallCount   = d.smallCount;
+    if (d.spendDifficulty !== undefined && SPEND_RATE[d.spendDifficulty]) {
+      spendDifficulty = d.spendDifficulty;
+      renderSpendDifficultyToggle();
+    }
     if (d.left       !== undefined) _savedLeft   = d.left;
     if (d.total      !== undefined) _savedTotal  = d.total;
     if (d.curId      !== undefined) _savedCurId  = d.curId;
@@ -2544,6 +2579,7 @@ function initCloud() {
 
 // ── Init ──
 load();
+renderSpendDifficultyToggle();
 if (todayStr() !== lastDay) dailyRollover();  // catch up if the app was closed across midnight
 reconcileLocVisibility();
 reconcileTimeVisibility();

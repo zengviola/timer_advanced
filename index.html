@@ -379,7 +379,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v87</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v88</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -677,6 +677,7 @@ let spendStartCoins = 0;  // coins balance at the moment the current spend sessi
 let spendGross    = 0;   // coins actually taken by the spend timer itself this session (ignores earnings)
 let spendEarned   = 0;   // coins earned by completing tasks while this spend session is active
 let spendAlarmFired = false;  // the coin alarm has already fired for this spend session (don't repeat it every tick)
+let spendLastHeartbeat = 0;  // last time spendTick() force-pushed just to keep spendTs fresh (see spendTick)
 const SPEND_OVERDRAFT_FLOOR = -120;  // keep deducting past 0 (2h worth at 1 coin/min) rather than stopping dead at 0
 const COIN_PLAY_MIN = 5;  // below this balance (negative included), starting anything is blocked
 let spendDifficulty = 'low';  // 'low' | 'mid' | 'high' — global setting, persists until changed
@@ -1503,6 +1504,7 @@ function toggleSpendCoins() {
     spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
     spendGross = 0; spendEarned = 0;
     updateStats(); save();
+    if (cloudReady) pushToCloud();  // bypass the debounce — an external tool (e.g. a Steam-blocking guard) may be gating on spendingCoins and needs this promptly, not after a 3s delay
     return;
   }
   startSpendCoins();
@@ -1519,7 +1521,9 @@ function startSpendCoins() {
   spendGross      = 0;
   spendEarned     = 0;
   spendAlarmFired = false;
+  spendLastHeartbeat = Date.now();
   updateStats(); save();
+  if (cloudReady) pushToCloud();  // same as above — push the new spendingCoins=true state immediately
   spendInterval = setInterval(spendTick, 1000);
   return true;
 }
@@ -1565,6 +1569,7 @@ function confirmCoinAlarm() {
     spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
     spendGross = 0; spendEarned = 0;
     updateStats(); save();
+    if (cloudReady) pushToCloud();  // see toggleSpendCoins() — push spendingCoins=false immediately, don't wait on the debounce
   }
 }
 
@@ -1617,6 +1622,13 @@ function spendTick() {
   if (coins <= 0 && !spendAlarmFired) {
     spendAlarmFired = true;
     startCoinAlarm();
+  }
+  // Coin deduction only saves once per elapsed minute, which would otherwise leave spendTs
+  // looking stale for up to a minute at a time to anything watching it externally (e.g. a
+  // Steam-blocking guard script) during a session that's genuinely still active every second.
+  if (cloudReady && Date.now() - spendLastHeartbeat > 15000) {
+    spendLastHeartbeat = Date.now();
+    pushToCloud();
   }
   updateStats();
 }
@@ -2395,6 +2407,7 @@ function getCloudPayload() {
     skippedTasks, shelvedTasks, tasksTs,
     heldTasks, timeHeldTasks, locState, smallCount, spendDifficulty,
     left, total, curId: cur ? cur.id : -1,
+    spendingCoins, spendTs: Date.now(),
     savedDate: todayStr()
   });
 }

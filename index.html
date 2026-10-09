@@ -370,6 +370,14 @@
     .spend-diff-row { display: flex; align-items: center; gap: 10px; }
     #spendDifficultyToggle { font-size: 0.72rem; flex: 1; }
     #spendDifficultyToggle .type-btn { padding: 5px 2px; }
+    .steps-row { display: flex; align-items: center; gap: 10px; }
+    .steps-row input { flex: 1; }
+    .btn-exchange-steps {
+      border: none; border-radius: 8px; padding: 6px 14px; white-space: nowrap;
+      font-size: 0.78rem; font-weight: 700; cursor: pointer; font-family: inherit;
+      transition: opacity .15s; background: var(--small); color: #fff;
+    }
+    .btn-exchange-steps:hover { opacity: .85; }
     .btn-start-spend:hover, .btn-stop-spend:hover { opacity: .85; }
     .btn-start-spend { background: var(--once); color: #fff; }
     .btn-stop-spend  { background: var(--danger); color: #fff; margin-left: auto; }
@@ -379,7 +387,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v88</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v89</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -463,6 +471,11 @@
         <button class="type-btn" data-diff="mid"  onclick="setSpendDifficulty('mid')">中 2:1</button>
         <button class="type-btn" data-diff="high" onclick="setSpendDifficulty('high')">高 3:1</button>
       </div>
+    </div>
+    <div class="steps-row">
+      <span class="fl">步数兑换</span>
+      <input type="number" id="stepsInput" min="0" placeholder="步数" onkeydown="if(event.key==='Enter')exchangeSteps()">
+      <button class="btn-exchange-steps" onclick="exchangeSteps()">兑换</button>
     </div>
     <div class="coin-spend-detail" id="coinSpendDetail" style="display:none">
       <span>开始 <b id="spendStartDisp">0</b></span>
@@ -680,6 +693,7 @@ let spendAlarmFired = false;  // the coin alarm has already fired for this spend
 let spendLastHeartbeat = 0;  // last time spendTick() force-pushed just to keep spendTs fresh (see spendTick)
 const SPEND_OVERDRAFT_FLOOR = -120;  // keep deducting past 0 (2h worth at 1 coin/min) rather than stopping dead at 0
 const COIN_PLAY_MIN = 5;  // below this balance (negative included), starting anything is blocked
+const STEPS_PER_COIN = 5;  // manual step-count entry: 5 steps = 1 coin
 let spendDifficulty = 'low';  // 'low' | 'mid' | 'high' — global setting, persists until changed
 const SPEND_RATE = { low: 1, mid: 2, high: 3 };  // coins deducted per elapsed minute while 消耗ing
 let _savedLeft    = null;
@@ -1496,6 +1510,15 @@ function resetToday() {
   completedToday = 0;
   if (running) recordStart();  // rebase timerStartedAt so a running task doesn't recompute elapsed from before the reset
   smallCount = 0;  // small-cycle count toward next big-cycle trigger
+  updateStats(); save();
+}
+function exchangeSteps() {
+  const input = document.getElementById('stepsInput');
+  const steps = Math.max(0, parseInt(input.value) || 0);
+  const earned = Math.floor(steps / STEPS_PER_COIN);
+  if (earned <= 0) { flash(input); return; }
+  coins += earned; coinsToday += earned; coinsTs = Date.now();
+  input.value = '';
   updateStats(); save();
 }
 function toggleSpendCoins() {

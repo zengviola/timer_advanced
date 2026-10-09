@@ -387,7 +387,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v89</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v90</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -693,7 +693,7 @@ let spendAlarmFired = false;  // the coin alarm has already fired for this spend
 let spendLastHeartbeat = 0;  // last time spendTick() force-pushed just to keep spendTs fresh (see spendTick)
 const SPEND_OVERDRAFT_FLOOR = -120;  // keep deducting past 0 (2h worth at 1 coin/min) rather than stopping dead at 0
 const COIN_PLAY_MIN = 5;  // below this balance (negative included), starting anything is blocked
-const STEPS_PER_COIN = 5;  // manual step-count entry: 5 steps = 1 coin
+const STEPS_PER_COIN = 50;  // manual step-count entry: 50 steps = 1 coin
 let spendDifficulty = 'low';  // 'low' | 'mid' | 'high' — global setting, persists until changed
 const SPEND_RATE = { low: 1, mid: 2, high: 3 };  // coins deducted per elapsed minute while 消耗ing
 let _savedLeft    = null;

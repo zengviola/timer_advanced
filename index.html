@@ -400,7 +400,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v94</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v95</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -436,16 +436,6 @@
       <div class="stat-label">当前位置</div>
       <div class="stat-value" id="statCtx" style="font-size:0.9rem">公司</div>
       <div class="stat-sub"  id="statCtxSub">家庭任务已隐藏</div>
-    </div>
-    <div class="stat-card" id="waterCard" style="display:none;flex:0.6">
-      <div class="stat-label">💧 喝水</div>
-      <div class="stat-value" id="statWater" style="font-size:1.1rem">0</div>
-      <div class="stat-sub"  id="statWaterSub">杯</div>
-    </div>
-    <div class="stat-card" style="cursor:pointer;user-select:none;border:1px solid rgba(239,68,68,.2)" onclick="resetToday()" title="重置今日计时">
-      <div class="stat-label" style="color:var(--danger)">今日重置</div>
-      <div class="stat-value" style="font-size:0.85rem;color:var(--danger)">↺</div>
-      <div class="stat-sub">点击归零</div>
     </div>
   </div>
 
@@ -1451,17 +1441,6 @@ function fmtSub(sec) {
   const s = sec % 60;
   return `${h > 0 ? h+'小时' : ''}${m > 0 ? m+'分钟' : ''}${h===0&&m<10 ? s+'秒' : ''}` || '0秒';
 }
-function updateWater() {
-  const card = document.getElementById('waterCard');
-  const today = todayStr();
-  const allT = [...tasks, ...bigTasks, ...dayHeldTasks, ...skippedTasks.map(s => s.task), ...shelvedTasks];
-  const water = allT.filter(t => t.name && t.name.includes('喝水'));
-  if (water.length === 0) { card.style.display = 'none'; return; }
-  card.style.display = 'flex';
-  const count = water.reduce((sum, t) => sum + (t.dayCountDate === today ? (t.dayCount || 0) : 0), 0);
-  document.getElementById('statWater').textContent = count;
-  document.getElementById('statWaterSub').textContent = count === 0 ? '还没喝' : '杯';
-}
 function fmtDur(ms) {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
   const h = Math.floor(totalSec / 3600);
@@ -1497,15 +1476,6 @@ function updateStats() {
   } else {
     detail.style.display = 'none';
   }
-  updateWater();
-}
-function resetToday() {
-  if (!confirm('把今日已用与今日已完成归零？')) return;
-  totalToday = 0; todayAtResume = 0;
-  completedToday = 0;
-  if (running) recordStart();  // rebase timerStartedAt so a running task doesn't recompute elapsed from before the reset
-  smallCount = 0;  // small-cycle count toward next big-cycle trigger
-  updateStats(); save();
 }
 // 兑换 asks the TaskTimer iOS app to read today's Health steps right now; the app answers
 // through window.__nativeSteps(total, true). Steps can't be typed in by hand.

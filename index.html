@@ -378,6 +378,19 @@
       transition: opacity .15s; background: var(--small); color: #fff;
     }
     .btn-exchange-steps:hover { opacity: .85; }
+    .steps-auto { font-size: 0.75rem; color: var(--muted); }
+    .steps-auto b { color: var(--text); font-variant-numeric: tabular-nums; }
+    .steps-log-toggle {
+      background: none; border: none; padding: 0; cursor: pointer; font-family: inherit;
+      font-size: 0.75rem; font-weight: 600; color: var(--small); text-align: left;
+    }
+    .steps-log { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+    .steps-log-item {
+      display: flex; gap: 8px; align-items: baseline; font-size: 0.75rem; color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .steps-log-item .sl-coins { margin-left: auto; color: var(--small); font-weight: 700; }
+    .steps-log-empty { font-size: 0.75rem; color: var(--surf3); }
     .btn-start-spend:hover, .btn-stop-spend:hover { opacity: .85; }
     .btn-start-spend { background: var(--once); color: #fff; }
     .btn-stop-spend  { background: var(--danger); color: #fff; margin-left: auto; }
@@ -387,7 +400,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v92</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v93</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -459,6 +472,9 @@
       <input type="number" id="stepsInput" min="0" placeholder="步数" onkeydown="if(event.key==='Enter')exchangeSteps()">
       <button class="btn-exchange-steps" onclick="exchangeSteps()">兑换</button>
     </div>
+    <div class="steps-auto" id="stepsAuto" style="display:none">👟 iPhone 今日 <b id="stepsSeenDisp">0</b> 步 · 已自动兑换 <b id="stepsCreditedDisp">0</b> 步</div>
+    <button class="steps-log-toggle" onclick="toggleStepsLog()">兑换记录<span id="stepsLogCount"></span> ▾</button>
+    <div class="steps-log" id="stepsLog" style="display:none"></div>
     <div class="coin-spend-detail" id="coinSpendDetail" style="display:none">
       <span>开始 <b id="spendStartDisp">0</b></span>
       <span>共可消耗 <b id="spendTotalDisp">00:00</b></span>
@@ -676,7 +692,12 @@ let spendLastHeartbeat = 0;  // last time spendTick() force-pushed just to keep 
 let spendStateTs  = 0;   // ms timestamp of the last local 消耗 start/stop; lets other devices adopt it without a stale pull undoing it
 const SPEND_OVERDRAFT_FLOOR = -120;  // keep deducting past 0 (2h worth at 1 coin/min) rather than stopping dead at 0
 const COIN_PLAY_MIN = 5;  // below this balance (negative included), starting anything is blocked
-const STEPS_PER_COIN = 50;  // manual step-count entry: 50 steps = 1 coin
+const STEPS_PER_COIN = 50;  // step-count exchange (manual or iPhone auto): 50 steps = 1 coin
+let stepsDate     = '';  // day stepsSeen/stepsCredited belong to
+let stepsSeen     = 0;   // latest iPhone step total reported today
+let stepsCredited = 0;   // today's iPhone steps already turned into coins (whole multiples of STEPS_PER_COIN)
+let stepsLog      = [];  // [{ts, steps, coins, src: 'auto'|'manual'}], newest first
+const STEPS_LOG_MAX = 300;
 let spendDifficulty = 'low';  // 'low' | 'mid' | 'high' — global setting, persists until changed
 const SPEND_RATE = { low: 1, mid: 2, high: 3 };  // coins deducted per elapsed minute while 消耗ing
 let _savedLeft    = null;
@@ -1493,7 +1514,77 @@ function exchangeSteps() {
   if (earned <= 0) { flash(input); return; }
   coins += earned; coinsToday += earned; coinsTs = Date.now();
   input.value = '';
+  addStepsLog(earned * STEPS_PER_COIN, earned, 'manual');
   updateStats(); save();
+}
+
+// ── iPhone steps (TaskTimer app reads HealthKit and calls this with today's total) ──
+// Only whole STEPS_PER_COIN chunks are credited; the remainder carries over to the next report.
+window.__nativeSteps = function (total) {
+  // Wait for the first cloud pull: a fresh install would otherwise re-credit steps
+  // that this or another install already turned into coins today.
+  if (!cloudReady) { setTimeout(() => window.__nativeSteps(total), 2000); return; }
+  total = Math.max(0, Math.floor(total) || 0);
+  rollStepsDay();
+  stepsSeen = Math.max(stepsSeen, total);
+  const earned = Math.floor((stepsSeen - stepsCredited) / STEPS_PER_COIN);
+  if (earned > 0) {
+    stepsCredited += earned * STEPS_PER_COIN;
+    coins += earned; coinsToday += earned; coinsTs = Date.now();
+    addStepsLog(earned * STEPS_PER_COIN, earned, 'auto');
+    updateStats();
+  }
+  renderSteps();
+  save();
+};
+
+function rollStepsDay() {
+  if (stepsDate === todayStr()) return;
+  stepsDate = todayStr(); stepsSeen = 0; stepsCredited = 0;
+}
+
+function addStepsLog(steps, earned, src) {
+  stepsLog.unshift({ ts: Date.now(), steps, coins: earned, src });
+  stepsLog = stepsLog.slice(0, STEPS_LOG_MAX);
+  renderSteps();
+}
+
+function toggleStepsLog() {
+  const el = document.getElementById('stepsLog');
+  el.style.display = el.style.display === 'none' ? 'flex' : 'none';
+}
+
+function renderSteps() {
+  const today = stepsDate === todayStr();
+  document.getElementById('stepsAuto').style.display = today && stepsSeen > 0 ? 'block' : 'none';
+  document.getElementById('stepsSeenDisp').textContent     = (today ? stepsSeen : 0).toLocaleString();
+  document.getElementById('stepsCreditedDisp').textContent = (today ? stepsCredited : 0).toLocaleString();
+  document.getElementById('stepsLogCount').textContent = stepsLog.length ? `（${stepsLog.length}）` : '';
+  const pad = n => String(n).padStart(2, '0');
+  document.getElementById('stepsLog').innerHTML = stepsLog.length
+    ? stepsLog.map(e => {
+        const d = new Date(e.ts);
+        return `<div class="steps-log-item"><span>${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}</span>`
+             + `<span>${e.src === 'auto' ? '📱 自动' : '✍️ 手动'}</span><span>${e.steps.toLocaleString()} 步</span>`
+             + `<span class="sl-coins">+${e.coins}</span></div>`;
+      }).join('')
+    : '<div class="steps-log-empty">还没有兑换记录</div>';
+}
+
+// Steps history is merged (not replaced) so neither device loses entries; today's
+// counters only ever grow, so the larger value is the one that has seen more.
+function applyCloudSteps(d) {
+  if (Array.isArray(d.stepsLog)) {
+    const seen = new Set(stepsLog.map(e => e.ts + e.src));
+    const merged = stepsLog.concat(d.stepsLog.filter(e => !seen.has(e.ts + e.src)));
+    stepsLog = merged.sort((a, b) => b.ts - a.ts).slice(0, STEPS_LOG_MAX);
+  }
+  if (d.stepsDate === todayStr()) {
+    rollStepsDay();
+    stepsSeen     = Math.max(stepsSeen, d.stepsSeen || 0);
+    stepsCredited = Math.max(stepsCredited, d.stepsCredited || 0);
+  }
+  renderSteps();
 }
 function toggleSpendCoins() {
   if (spendingCoins) {
@@ -1981,6 +2072,7 @@ function save() {
     localStorage.setItem('tt_spendDeducted', spendDeducted);
     localStorage.setItem('tt_spendStateTs', spendStateTs);
     localStorage.setItem('tt_spendDifficulty', spendDifficulty);
+    localStorage.setItem('tt_steps', JSON.stringify({ stepsDate, stepsSeen, stepsCredited, stepsLog }));
     localStorage.setItem('tt_skipped',   JSON.stringify(skippedTasks));
     localStorage.setItem('tt_shelved',   JSON.stringify(shelvedTasks));
     localStorage.setItem('tt_heldTasks',  JSON.stringify(heldTasks));
@@ -2057,6 +2149,8 @@ function load() {
     if (th) timeHeldTasks = JSON.parse(th);
     const tts = localStorage.getItem('tt_tasksTs');
     if (tts) tasksTs = parseInt(tts) || 0;
+    const stp = localStorage.getItem('tt_steps');
+    if (stp) ({ stepsDate, stepsSeen, stepsCredited, stepsLog } = { stepsDate: '', stepsSeen: 0, stepsCredited: 0, stepsLog: [], ...JSON.parse(stp) });
     const sd = localStorage.getItem('tt_spendDifficulty');
     if (sd && SPEND_RATE[sd]) spendDifficulty = sd;
     if (l)  _savedLeft  = parseInt(l);
@@ -2414,6 +2508,7 @@ function getCloudPayload() {
     left, total, curId: cur ? cur.id : -1,
     spendingCoins, spendTs: Date.now(),
     spendStateTs, spendStartAt, spendDeducted, spendStartCoins, spendGross, spendEarned,
+    stepsDate, stepsSeen, stepsCredited, stepsLog,
     savedDate: todayStr()
   });
 }
@@ -2454,6 +2549,7 @@ function applyCloudPayload(raw) {
     // otherwise a stale gist (e.g. pulled right after a phone was backgrounded for
     // hours mid-spend) would clobber a correct local deduction.
     applyCloudSpend(d, applyCloudCoins(d));
+    applyCloudSteps(d);
     if (d.skippedTasks !== undefined && (d.totalTodayDate || d.savedDate) === todayStr()) skippedTasks = d.skippedTasks;
     if (d.locState   !== undefined) locState     = d.locState;
     else if (d.workMode !== undefined) locState  = d.workMode ? 'work' : 'home_before';
@@ -2584,6 +2680,7 @@ async function pushToCloud() {
           applyCloudSpend(d, applyCloudCoins(d));
           updateStats(); save();
         }
+        applyCloudSteps(d);
       }
     } catch (e) { /* fall through and push what we have */ }
   }
@@ -2668,6 +2765,7 @@ async function pollCloud() {
       } else if (running && (coinsNewer || spendNewer)) {
         // Coins and 消耗 don't touch the countdown, so these sync even mid-task.
         applyCloudSpend(d, applyCloudCoins(d));
+        applyCloudSteps(d);
         updateStats(); save();
         setChip('ok', '☁ 已同步');
       }
@@ -2715,6 +2813,7 @@ checkDayHeld();
 if (tasks.length > 0) loadNext();
 else { renderAll(); updateStats(); }
 if (spendingCoins && spendStartAt) { spendTick(); spendInterval = setInterval(spendTick, 1000); }
+renderSteps();
 initCloud();
 </script>
 

@@ -400,7 +400,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v98</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v99</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -1789,10 +1789,11 @@ async function askAI() {
   if (!cur) return;
   let apiKey = localStorage.getItem('tt_claude_key');
   if (!apiKey) {
-    const entered = prompt('输入你的 Anthropic API Key（只保存在这台设备本地，不会上传到别处）：');
+    const entered = prompt('输入你的 Anthropic API Key（会跟其他设置一样同步到云端，其他设备自动有，不用重复输入）：');
     if (!entered || !entered.trim()) return;
     apiKey = entered.trim();
     localStorage.setItem('tt_claude_key', apiKey);
+    if (cloudReady) pushToCloud();  // sync it out right away, same as other one-time-entry settings
   }
 
   const btn = document.getElementById('btnAiAdvice');
@@ -2547,6 +2548,7 @@ function getCloudPayload() {
     spendingCoins, spendTs: Date.now(),
     spendStateTs, spendStartAt, spendDeducted, spendStartCoins, spendGross, spendEarned,
     stepsDate, stepsSeen, stepsCredited, stepsLog,
+    claudeApiKey: localStorage.getItem('tt_claude_key') || undefined,
     savedDate: todayStr()
   });
 }
@@ -2596,6 +2598,9 @@ function applyCloudPayload(raw) {
       spendDifficulty = d.spendDifficulty;
       renderSpendDifficultyToggle();
     }
+    // Synced like any other one-time-entry setting (same pattern as the GitHub token itself)
+    // so askAI() only needs the key typed in once, on whichever device is handy first.
+    if (d.claudeApiKey) localStorage.setItem('tt_claude_key', d.claudeApiKey);
     if (d.left       !== undefined) _savedLeft   = d.left;
     if (d.total      !== undefined) _savedTotal  = d.total;
     if (d.curId      !== undefined) _savedCurId  = d.curId;

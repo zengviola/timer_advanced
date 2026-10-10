@@ -387,7 +387,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v90</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v91</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -691,6 +691,7 @@ let spendGross    = 0;   // coins actually taken by the spend timer itself this 
 let spendEarned   = 0;   // coins earned by completing tasks while this spend session is active
 let spendAlarmFired = false;  // the coin alarm has already fired for this spend session (don't repeat it every tick)
 let spendLastHeartbeat = 0;  // last time spendTick() force-pushed just to keep spendTs fresh (see spendTick)
+let spendStateTs  = 0;   // ms timestamp of the last local 消耗 start/stop; lets other devices adopt it without a stale pull undoing it
 const SPEND_OVERDRAFT_FLOOR = -120;  // keep deducting past 0 (2h worth at 1 coin/min) rather than stopping dead at 0
 const COIN_PLAY_MIN = 5;  // below this balance (negative included), starting anything is blocked
 const STEPS_PER_COIN = 50;  // manual step-count entry: 50 steps = 1 coin
@@ -1204,6 +1205,7 @@ document.addEventListener('visibilitychange', () => {
   }
   if (running) tick();
   if (spendingCoins) spendTick();
+  if (cloudReady) pollCloud();
   if (reconcileTimeVisibility()) { if (!cur) loadNext(); else renderQ(); save(); }
 });
 
@@ -1525,7 +1527,7 @@ function toggleSpendCoins() {
   if (spendingCoins) {
     clearInterval(spendInterval); spendInterval = null;
     spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
-    spendGross = 0; spendEarned = 0;
+    spendGross = 0; spendEarned = 0; spendStateTs = Date.now();
     updateStats(); save();
     if (cloudReady) pushToCloud();  // bypass the debounce — an external tool (e.g. a Steam-blocking guard) may be gating on spendingCoins and needs this promptly, not after a 3s delay
     return;
@@ -1545,6 +1547,7 @@ function startSpendCoins() {
   spendEarned     = 0;
   spendAlarmFired = false;
   spendLastHeartbeat = Date.now();
+  spendStateTs    = Date.now();
   updateStats(); save();
   if (cloudReady) pushToCloud();  // same as above — push the new spendingCoins=true state immediately
   spendInterval = setInterval(spendTick, 1000);
@@ -1590,7 +1593,7 @@ function confirmCoinAlarm() {
   if (spendingCoins) {
     clearInterval(spendInterval); spendInterval = null;
     spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
-    spendGross = 0; spendEarned = 0;
+    spendGross = 0; spendEarned = 0; spendStateTs = Date.now();
     updateStats(); save();
     if (cloudReady) pushToCloud();  // see toggleSpendCoins() — push spendingCoins=false immediately, don't wait on the debounce
   }
@@ -2003,6 +2006,8 @@ function save() {
     localStorage.setItem('tt_spendStartCoins', spendStartCoins);
     localStorage.setItem('tt_spendGross',   spendGross);
     localStorage.setItem('tt_spendEarned',  spendEarned);
+    localStorage.setItem('tt_spendDeducted', spendDeducted);
+    localStorage.setItem('tt_spendStateTs', spendStateTs);
     localStorage.setItem('tt_spendDifficulty', spendDifficulty);
     localStorage.setItem('tt_skipped',   JSON.stringify(skippedTasks));
     localStorage.setItem('tt_shelved',   JSON.stringify(shelvedTasks));
@@ -2058,12 +2063,17 @@ function load() {
     const spc = localStorage.getItem('tt_spendStartCoins');
     const spg = localStorage.getItem('tt_spendGross');
     const spe = localStorage.getItem('tt_spendEarned');
+    const spdd = localStorage.getItem('tt_spendDeducted');
+    const spst = localStorage.getItem('tt_spendStateTs');
+    if (spst) spendStateTs = parseInt(spst) || 0;
     if (sp === '1' && spa) {
       spendingCoins   = true;
       spendStartAt    = parseInt(spa) || null;
       spendStartCoins = spc !== null ? (parseInt(spc) || 0) : coins;
       spendGross      = spg !== null ? (parseInt(spg) || 0) : 0;
       spendEarned     = spe !== null ? (parseInt(spe) || 0) : 0;
+      if (spdd !== null) spendDeducted = parseInt(spdd) || 0;
+      else spendDeducted = Math.floor((Date.now() - spendStartAt) / 60000);  // pre-fix save: assume minutes so far were already charged rather than charging them twice
     }
     const sk = pick('tt_skipped',  'tt5_skipped');
     if (sk && tdd === todayStr()) skippedTasks = JSON.parse(sk);
@@ -2431,6 +2441,7 @@ function getCloudPayload() {
     heldTasks, timeHeldTasks, locState, smallCount, spendDifficulty,
     left, total, curId: cur ? cur.id : -1,
     spendingCoins, spendTs: Date.now(),
+    spendStateTs, spendStartAt, spendDeducted, spendStartCoins, spendGross, spendEarned,
     savedDate: todayStr()
   });
 }
@@ -2470,11 +2481,7 @@ function applyCloudPayload(raw) {
     // Only accept cloud coins if they're actually newer than our last local change —
     // otherwise a stale gist (e.g. pulled right after a phone was backgrounded for
     // hours mid-spend) would clobber a correct local deduction.
-    if ((d.coinsTs || 0) > coinsTs) {
-      if (d.coins !== undefined) coins = d.coins;
-      if (d.coinsToday !== undefined && (d.coinsTodayDate || d.savedDate) === todayStr()) coinsToday = d.coinsToday;
-      coinsTs = d.coinsTs || coinsTs;
-    }
+    applyCloudSpend(d, applyCloudCoins(d));
     if (d.skippedTasks !== undefined && (d.totalTodayDate || d.savedDate) === todayStr()) skippedTasks = d.skippedTasks;
     if (d.locState   !== undefined) locState     = d.locState;
     else if (d.workMode !== undefined) locState  = d.workMode ? 'work' : 'home_before';
@@ -2495,6 +2502,42 @@ function applyCloudPayload(raw) {
     if (tasks.length > 0) loadNext();
     else { renderAll(); updateStats(); }
   } catch(e) { console.error('Cloud apply failed', e); }
+}
+
+// Returns whether the cloud's coins were taken (they're only taken when newer than ours).
+function applyCloudCoins(d) {
+  if ((d.coinsTs || 0) <= coinsTs) return false;
+  if (d.coins !== undefined) coins = d.coins;
+  if (d.coinsToday !== undefined && (d.coinsTodayDate || d.savedDate) === todayStr()) coinsToday = d.coinsToday;
+  coinsTs = d.coinsTs || coinsTs;
+  return true;
+}
+
+// Adopts a 消耗 start/stop made on another device. While both devices run the same
+// session, spendDeducted follows whichever coin balance we keep, so a minute already
+// charged on the other device isn't charged again here.
+function applyCloudSpend(d, tookCoins) {
+  if ((d.spendStateTs || 0) > spendStateTs) {
+    spendStateTs = d.spendStateTs;
+    clearInterval(spendInterval); spendInterval = null;
+    if (d.spendingCoins && d.spendStartAt) {
+      spendingCoins   = true;
+      spendStartAt    = d.spendStartAt;
+      spendDeducted   = d.spendDeducted || 0;
+      spendStartCoins = d.spendStartCoins ?? coins;
+      spendGross      = d.spendGross || 0;
+      spendEarned     = d.spendEarned || 0;
+      spendAlarmFired = false;
+      spendInterval   = setInterval(spendTick, 1000);
+    } else {
+      spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
+      spendGross = 0; spendEarned = 0;
+    }
+  } else if (tookCoins && spendingCoins && d.spendingCoins && d.spendStartAt === spendStartAt) {
+    spendDeducted = d.spendDeducted || 0;
+    spendGross    = d.spendGross || 0;
+    spendEarned   = d.spendEarned || 0;
+  }
 }
 
 async function findGistId() {
@@ -2554,6 +2597,24 @@ async function loadFromCloud() {
 async function pushToCloud() {
   if (!cloudToken) return;
   setChip('syncing', '↻ 同步中…');
+  // Each push replaces the whole file, so first take in any newer coins / 消耗 start-stop
+  // from another device — otherwise e.g. this device's spend heartbeat would overwrite a
+  // 停止 made on the other device, and neither would ever see it again.
+  if (cloudGistId) {
+    try {
+      const latest = await fetch(`https://api.github.com/gists/${cloudGistId}`, {
+        headers: { Authorization: `token ${cloudToken}`, Accept: 'application/vnd.github+json' }
+      });
+      const raw = latest.ok ? (await latest.json()).files?.['timer_data.json']?.content : null;
+      if (raw) {
+        const d = JSON.parse(raw);
+        if ((d.coinsTs || 0) > coinsTs || (d.spendStateTs || 0) > spendStateTs) {
+          applyCloudSpend(d, applyCloudCoins(d));
+          updateStats(); save();
+        }
+      }
+    } catch (e) { /* fall through and push what we have */ }
+  }
   const body = JSON.stringify({
     description: 'Timer Advanced — task data',
     public: false,
@@ -2624,10 +2685,18 @@ async function pollCloud() {
     // ticker, which would silently interrupt an active countdown for an unrelated change
     // elsewhere in the queue. It catches up on the very next poll once nothing is running.
     const dataRaw = gist.files?.['timer_data.json']?.content;
-    if (dataRaw && !running) {
+    if (dataRaw) {
       const d = JSON.parse(dataRaw);
-      if ((d.tasksTs || 0) > tasksTs || (d.coinsTs || 0) > coinsTs) {
+      const coinsNewer = (d.coinsTs || 0) > coinsTs;
+      const spendNewer = (d.spendStateTs || 0) > spendStateTs;
+      if (!running && ((d.tasksTs || 0) > tasksTs || coinsNewer || spendNewer)) {
         applyCloudPayload(dataRaw);
+        updateStats(); save();
+        setChip('ok', '☁ 已同步');
+      } else if (running && (coinsNewer || spendNewer)) {
+        // Coins and 消耗 don't touch the countdown, so these sync even mid-task.
+        applyCloudSpend(d, applyCloudCoins(d));
+        updateStats(); save();
         setChip('ok', '☁ 已同步');
       }
     }

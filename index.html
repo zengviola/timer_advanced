@@ -400,7 +400,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v95</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v96</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -1692,7 +1692,7 @@ function spendTick() {
   // Coin deduction only saves once per elapsed minute, which would otherwise leave spendTs
   // looking stale for up to a minute at a time to anything watching it externally (e.g. a
   // Steam-blocking guard script) during a session that's genuinely still active every second.
-  if (cloudReady && Date.now() - spendLastHeartbeat > 15000) {
+  if (cloudReady && Date.now() - spendLastHeartbeat > 30000) {
     spendLastHeartbeat = Date.now();
     pushToCloud();
   }
@@ -2770,7 +2770,7 @@ function initCloud() {
     cloudReady = false;  // hold off auto-push from init-time save() calls until this pull settles
     setChip('syncing', '↻ 同步中…');
     loadFromCloud();
-    setInterval(pollCloud, 15000);
+    setInterval(pollCloud, 30000);
   } else {
     setChip('idle', '☁ 未配置');
   }

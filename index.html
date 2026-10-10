@@ -371,7 +371,7 @@
     #spendDifficultyToggle { font-size: 0.72rem; flex: 1; }
     #spendDifficultyToggle .type-btn { padding: 5px 2px; }
     .steps-row { display: flex; align-items: center; gap: 10px; }
-    .steps-row input { flex: 1; }
+    .steps-hint { flex: 1; font-size: 0.75rem; color: var(--surf3); }
     .btn-exchange-steps {
       border: none; border-radius: 8px; padding: 6px 14px; white-space: nowrap;
       font-size: 0.78rem; font-weight: 700; cursor: pointer; font-family: inherit;
@@ -400,7 +400,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v93</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v94</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -469,8 +469,8 @@
     </div>
     <div class="steps-row">
       <span class="fl">步数兑换</span>
-      <input type="number" id="stepsInput" min="0" placeholder="步数" onkeydown="if(event.key==='Enter')exchangeSteps()">
-      <button class="btn-exchange-steps" onclick="exchangeSteps()">兑换</button>
+      <span class="steps-hint" id="stepsHint">读取 iPhone 健康里的今日步数</span>
+      <button class="btn-exchange-steps" id="btnExchangeSteps" onclick="exchangeSteps()">兑换</button>
     </div>
     <div class="steps-auto" id="stepsAuto" style="display:none">👟 iPhone 今日 <b id="stepsSeenDisp">0</b> 步 · 已自动兑换 <b id="stepsCreditedDisp">0</b> 步</div>
     <button class="steps-log-toggle" onclick="toggleStepsLog()">兑换记录<span id="stepsLogCount"></span> ▾</button>
@@ -1507,23 +1507,29 @@ function resetToday() {
   smallCount = 0;  // small-cycle count toward next big-cycle trigger
   updateStats(); save();
 }
+// 兑换 asks the TaskTimer iOS app to read today's Health steps right now; the app answers
+// through window.__nativeSteps(total, true). Steps can't be typed in by hand.
 function exchangeSteps() {
-  const input = document.getElementById('stepsInput');
-  const steps = Math.max(0, parseInt(input.value) || 0);
-  const earned = Math.floor(steps / STEPS_PER_COIN);
-  if (earned <= 0) { flash(input); return; }
-  coins += earned; coinsToday += earned; coinsTs = Date.now();
-  input.value = '';
-  addStepsLog(earned * STEPS_PER_COIN, earned, 'manual');
-  updateStats(); save();
+  const handler = window.webkit?.messageHandlers?.steps;
+  if (!handler) { alert('步数兑换需要在 iPhone 上的「任务计时器」App 里点'); return; }
+  const btn = document.getElementById('btnExchangeSteps');
+  btn.disabled = true; btn.textContent = '读取中…';
+  handler.postMessage('read');
+}
+
+function showStepsResult(text) {
+  const btn = document.getElementById('btnExchangeSteps');
+  btn.disabled = false; btn.textContent = text;
+  clearTimeout(showStepsResult.t);
+  showStepsResult.t = setTimeout(() => { btn.textContent = '兑换'; }, 2500);
 }
 
 // ── iPhone steps (TaskTimer app reads HealthKit and calls this with today's total) ──
 // Only whole STEPS_PER_COIN chunks are credited; the remainder carries over to the next report.
-window.__nativeSteps = function (total) {
+window.__nativeSteps = function (total, fromButton) {
   // Wait for the first cloud pull: a fresh install would otherwise re-credit steps
   // that this or another install already turned into coins today.
-  if (!cloudReady) { setTimeout(() => window.__nativeSteps(total), 2000); return; }
+  if (!cloudReady) { setTimeout(() => window.__nativeSteps(total, fromButton), 2000); return; }
   total = Math.max(0, Math.floor(total) || 0);
   rollStepsDay();
   stepsSeen = Math.max(stepsSeen, total);
@@ -1534,6 +1540,7 @@ window.__nativeSteps = function (total) {
     addStepsLog(earned * STEPS_PER_COIN, earned, 'auto');
     updateStats();
   }
+  if (fromButton) showStepsResult(earned > 0 ? `+${earned} 🪙` : total > 0 ? '没有新步数' : '读不到步数');
   renderSteps();
   save();
 };
@@ -1565,7 +1572,7 @@ function renderSteps() {
     ? stepsLog.map(e => {
         const d = new Date(e.ts);
         return `<div class="steps-log-item"><span>${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}</span>`
-             + `<span>${e.src === 'auto' ? '📱 自动' : '✍️ 手动'}</span><span>${e.steps.toLocaleString()} 步</span>`
+             + `<span>${e.src === 'auto' ? '📱 iPhone' : '✍️ 手动'}</span><span>${e.steps.toLocaleString()} 步</span>`
              + `<span class="sl-coins">+${e.coins}</span></div>`;
       }).join('')
     : '<div class="steps-log-empty">还没有兑换记录</div>';

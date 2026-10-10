@@ -387,7 +387,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v91</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v92</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -433,24 +433,6 @@
       <div class="stat-label" style="color:var(--danger)">今日重置</div>
       <div class="stat-value" style="font-size:0.85rem;color:var(--danger)">↺</div>
       <div class="stat-sub">点击归零</div>
-    </div>
-  </div>
-
-  <div class="stats-bar">
-    <div class="stat-card">
-      <div class="stat-label">今日已用</div>
-      <div class="stat-value" id="statToday">0m</div>
-      <div class="stat-sub" id="statTodaySub">—</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">今日已完成</div>
-      <div class="stat-value" id="statCompleted">0</div>
-      <div class="stat-sub" id="statCompletedSub">个任务</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">累计总时</div>
-      <div class="stat-value" id="statTotal">0m</div>
-      <div class="stat-sub" id="statTotalSub">—</div>
     </div>
   </div>
 
@@ -772,11 +754,6 @@ const trigBody  = document.getElementById('trigBody');
 const dailyInfoBox = document.getElementById('dailyInfoBox');
 const btnAdd    = document.getElementById('btnAdd');
 const btnCutIn  = document.getElementById('btnCutIn');
-const statToday    = document.getElementById('statToday');
-const statTodaySub = document.getElementById('statTodaySub');
-const statCompleted = document.getElementById('statCompleted');
-const statTotal    = document.getElementById('statTotal');
-const statTotalSub = document.getElementById('statTotalSub');
 const btnSkip      = document.getElementById('btnSkip');
 const btnSkipToday = document.getElementById('btnSkipToday');
 const btnShelve    = document.getElementById('btnShelve');
@@ -1474,11 +1451,6 @@ function fmtDur(ms) {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 function updateStats() {
-  statToday.textContent    = fmtTime(totalToday);
-  statTodaySub.textContent = fmtSub(totalToday);
-  statCompleted.textContent = completedToday;
-  statTotal.textContent    = fmtTime(totalAllTime);
-  statTotalSub.textContent = fmtSub(totalAllTime);
   document.getElementById('statCoins').textContent    = coinsToday;
   const spendRate = SPEND_RATE[spendDifficulty] || 1;
   document.getElementById('statCoinsSub').textContent = `累计 ${coins} · 可消耗 ${fmtDur(coins / spendRate * 60000)}`;

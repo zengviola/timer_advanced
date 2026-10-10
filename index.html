@@ -400,7 +400,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v97</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v98</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -1754,7 +1754,9 @@ function renderTimer() {
       ${timeSlotPill(cur.timeSlot)}
       ${loop}${dailyCount}
       <button class="edit-btn" onclick="openEditModal(${cur.id},'queue')" style="font-size:0.8rem">✏ 修改</button>
+      <button class="edit-btn" id="btnAiAdvice" onclick="askAI()" style="font-size:0.8rem">💡 AI建议</button>
     </div>
+    <div id="aiAdviceBox" style="display:none;font-size:0.82rem;color:var(--muted);margin-top:8px;padding:10px;background:var(--surf2);border-radius:8px;white-space:pre-wrap;text-align:left;"></div>
     ${waterHint}`;
 
   curInfo.style.display = 'block';
@@ -1776,6 +1778,65 @@ function advanceNameSegment() {
   cur.nameSegIdx = ((cur.nameSegIdx || 0) + 1) % parts.length;
   renderTimer();
   save();
+}
+
+// Asks Claude what to actually do for the current task, given just its name/description.
+// The API key is entered once and kept only in this browser's localStorage — same pattern
+// as the GitHub token for cloud sync — since this is a static page with no backend to hide
+// a shared key behind. anthropic-dangerous-direct-browser-access is required for a browser
+// to call the API directly at all.
+async function askAI() {
+  if (!cur) return;
+  let apiKey = localStorage.getItem('tt_claude_key');
+  if (!apiKey) {
+    const entered = prompt('输入你的 Anthropic API Key（只保存在这台设备本地，不会上传到别处）：');
+    if (!entered || !entered.trim()) return;
+    apiKey = entered.trim();
+    localStorage.setItem('tt_claude_key', apiKey);
+  }
+
+  const btn = document.getElementById('btnAiAdvice');
+  const box = document.getElementById('aiAdviceBox');
+  const taskName = cur.name;
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '🤔 思考中…';
+  box.style.display = 'block';
+  box.textContent = '';
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 400,
+        messages: [{ role: 'user', content: `我有一个待办任务，内容是："${taskName}"。请根据这个描述，具体告诉我应该做什么、怎么开始，简洁实用，不要废话。` }]
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const msg = data?.error?.message || `请求失败（状态码 ${res.status}）`;
+      if (res.status === 401) {
+        localStorage.removeItem('tt_claude_key');  // bad/expired key — clear it so the next click re-prompts
+        box.textContent = `API Key 无效，已清除，请重新点击"AI建议"输入新的。(${msg})`;
+      } else {
+        box.textContent = `出错了：${msg}`;
+      }
+    } else {
+      box.textContent = data.content?.[0]?.text || '没有收到回复';
+    }
+  } catch (e) {
+    box.textContent = `请求失败：${e.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origText;
+  }
 }
 
 function refreshDisp() {

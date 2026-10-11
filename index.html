@@ -401,7 +401,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v105</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v106</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -1889,6 +1889,15 @@ async function askAI() {
   box.style.display = 'block';
   box.textContent = '';
 
+  // A '/'-segmented name is a set of alternative small chores for this one slot (收一样
+  // 物品/组装一样东西/接水/...) — spell that out as an actual list instead of handing over
+  // the raw "a/b/c" string, which otherwise reads as one garbled task name with no structure
+  // for the model to recognize, let alone infer a same-flavor alternative from.
+  const segs = taskName.split('/').filter(Boolean);
+  const promptText = segs.length > 1
+    ? `我有一个任务槽位，目前列出的可选小事有：\n${segs.map(s => `- ${s}`).join('\n')}\n\n我点了这个按钮，说明这几项我现在都不想做。请根据这些例子的性质和风格，推荐一个新的、不在上面列表里、但调性相符的替代想法，具体说清楚要做什么、怎么开始。简洁实用，不要废话，也不要原样重复列表里任何一项。`
+    : `我有一个任务，内容是："${taskName}"。请根据这个描述，具体告诉我应该做什么、怎么开始，简洁实用，不要废话。`;
+
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -1901,7 +1910,7 @@ async function askAI() {
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 400,
-        messages: [{ role: 'user', content: `我有一个任务，内容是："${taskName}"。我点这个按钮，就是说明里面列出的这几个选项我都不想做。请给我一个不在这个列表里的新想法/替代方案，具体说清楚要做什么、怎么开始，简洁实用，不要重复列表里已有的内容，不要废话。` }]
+        messages: [{ role: 'user', content: promptText }]
       })
     });
     const data = await res.json();

@@ -357,6 +357,10 @@
     }
     .coin-value { font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
     .coin-sub { font-size: 0.7rem; color: var(--muted); }
+    .free-badge {
+      font-size: 0.7rem; font-weight: 700; color: var(--warn);
+      background: rgba(245,158,11,.15); border-radius: 999px; padding: 2px 8px; white-space: nowrap;
+    }
     .coin-spend-detail {
       display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
       font-size: 0.78rem; color: var(--muted);
@@ -401,7 +405,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v108</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v109</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -447,6 +451,7 @@
         <span class="coin-label">🪙 金币</span>
         <span class="coin-value" id="statCoins">0</span>
         <span class="coin-sub" id="statCoinsSub">累计 0</span>
+        <span class="free-badge" id="freeBadge" hidden>🎁 免费时间 · 到 20:30</span>
       </div>
       <button class="btn-start-spend" id="btnStartSpend" onclick="toggleSpendCoins()">开始消耗 <span id="btnStartSpendDur"></span></button>
     </div>
@@ -695,6 +700,12 @@ let spendAlarmFired = false;  // the coin alarm has already fired for this spend
 let spendLastHeartbeat = 0;  // last time spendTick() force-pushed just to keep spendTs fresh (see spendTick)
 let spendStateTs  = 0;   // ms timestamp of the last local 消耗 start/stop; lets other devices adopt it without a stale pull undoing it
 const SPEND_OVERDRAFT_FLOOR = -120;  // keep deducting past 0 (2h worth at 1 coin/min) rather than stopping dead at 0
+// 19:00–20:30 (device local time) is free: 消耗 can start at any balance and charges nothing.
+const FREE_WINDOW = [19 * 60, 20 * 60 + 30];
+function isFreeTime(ms = Date.now()) {
+  const d = new Date(ms), m = d.getHours() * 60 + d.getMinutes();
+  return m >= FREE_WINDOW[0] && m < FREE_WINDOW[1];
+}
 const COIN_PLAY_MIN = 5;  // below this balance (negative included), starting anything is blocked
 const STEPS_PER_COIN = 50;  // step-count exchange (manual or iPhone auto): 50 steps = 1 coin
 let stepsDate     = '';  // day stepsSeen/stepsCredited belong to
@@ -1558,6 +1569,7 @@ function fmtDur(ms) {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 function updateStats() {
+  document.getElementById('freeBadge').hidden = !isFreeTime();
   document.getElementById('statCoins').textContent    = coinsToday;
   const spendRate = SPEND_RATE[spendDifficulty] || 1;
   document.getElementById('statCoinsSub').textContent = `累计 ${coins} · 可消耗 ${fmtDur(coins / spendRate * 60000)}`;
@@ -1682,7 +1694,7 @@ function toggleSpendCoins() {
 
 function startSpendCoins() {
   if (spendingCoins) return;
-  if (coins < COIN_PLAY_MIN) { alert('金币不足，不可以启动游戏！！！'); return false; }
+  if (coins < COIN_PLAY_MIN && !isFreeTime()) { alert('金币不足，不可以启动游戏！！！'); return false; }
   ensureAudioCtx();  // unlock audio now, on this user gesture, so the later un-gestured alarm can actually play
   spendingCoins   = true;
   spendStartAt    = Date.now();
@@ -1784,7 +1796,9 @@ function spendTick() {
     // what's supposed to get the user's attention, not a hard stop they might not see.
     // Still floored, so an alarm ignored for hours doesn't run the balance away forever.
     const rate = SPEND_RATE[spendDifficulty] || 1;
-    for (let i = 0; i < due && coins > SPEND_OVERDRAFT_FLOOR; i++) {
+    // Minute m covers [start + (m-1) min, start + m min); minutes starting in the free window cost nothing.
+    for (let m = spendDeducted + 1; m <= elapsedMin && coins > SPEND_OVERDRAFT_FLOOR; m++) {
+      if (isFreeTime(spendStartAt + (m - 1) * 60000)) continue;
       coins = Math.max(SPEND_OVERDRAFT_FLOOR, coins - rate);
       coinsToday = Math.max(0, coinsToday - rate);
       spendGross += rate;
@@ -2373,6 +2387,7 @@ setInterval(() => {
     save();
   }
 }, 60 * 1000);
+setInterval(updateStats, 30 * 1000);
 
 // ── Edit Modal ──
 let editingId  = null;

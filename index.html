@@ -401,7 +401,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v102</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v103</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -1844,7 +1844,7 @@ async function askAI() {
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 400,
-        messages: [{ role: 'user', content: `我有一个待办任务，内容是："${taskName}"。请根据这个描述，具体告诉我应该做什么、怎么开始，简洁实用，不要废话。` }]
+        messages: [{ role: 'user', content: `我有一个任务，内容是："${taskName}"。我点这个按钮，就是说明里面列出的这几个选项我都不想做。请给我一个不在这个列表里的新想法/替代方案，具体说清楚要做什么、怎么开始，简洁实用，不要重复列表里已有的内容，不要废话。` }]
       })
     });
     const data = await res.json();

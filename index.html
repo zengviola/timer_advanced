@@ -401,7 +401,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v106</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v107</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -1061,6 +1061,30 @@ function dedupeDailyInstances() {
   tasks         = dedupe(tasks);
   heldTasks     = dedupe(heldTasks);
   timeHeldTasks = dedupe(timeHeldTasks);
+}
+
+// One-time bulk conversion: a 小循环 task whose name has more than 3 '/'-separated segments
+// (4+ options) becomes 大循环 instead — idempotent, so safe to leave running on every load.
+// Converted tasks join bigTasks (dormant, same as any newly-created big task) rather than
+// staying wherever they were, since that's what 大循环 actually means everywhere else.
+function migrateLongSegmentsToBig() {
+  let changed = false;
+  const convertOne = t => {
+    t.type = 'big';
+    if (!t.trigEvery || t.trigEvery < 1) t.trigEvery = 20;
+    bigTasks.push(t);
+    if (cur && cur.id === t.id) { clearInterval(ticker); running = false; overSecs = 0; cur = null; }
+    changed = true;
+  };
+  const qualifies = t => t.type === 'small' && t.name.split('/').length > 3;
+  const sweep = arr => arr.filter(t => { if (qualifies(t)) { convertOne(t); return false; } return true; });
+  tasks         = sweep(tasks);
+  heldTasks     = sweep(heldTasks);
+  timeHeldTasks = sweep(timeHeldTasks);
+  dayHeldTasks  = sweep(dayHeldTasks);
+  shelvedTasks  = sweep(shelvedTasks);
+  skippedTasks  = skippedTasks.filter(s => { if (qualifies(s.task)) { convertOne(s.task); return false; } return true; });
+  return changed;
 }
 
 // Inject a daily def into the active queue (if not already there and not done today)
@@ -2709,6 +2733,7 @@ function applyCloudPayload(raw) {
     if (d.curId      !== undefined) _savedCurId  = d.curId;
     migrateAllTags();
     dedupeDailyInstances();
+    migrateLongSegmentsToBig();
     reconcileLocVisibility();
     reconcileTimeVisibility();
     renderContext();
@@ -2948,6 +2973,7 @@ function initCloud() {
 // ── Init ──
 load();
 dedupeDailyInstances();
+migrateLongSegmentsToBig();
 renderSpendDifficultyToggle();
 if (todayStr() !== lastDay) dailyRollover();  // catch up if the app was closed across midnight
 reconcileLocVisibility();

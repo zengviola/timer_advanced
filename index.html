@@ -401,11 +401,11 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v104</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v105</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
-  <div class="debt-warning" id="coinDebtWarning" style="display:none">🚫 金币不足，不可以启动游戏！！！</div>
+  <div class="debt-warning" id="coinDebtWarning" style="display:none">🚫 金币不足，不可以开始消耗/启动游戏！！！（照常可以做任务赚金币）</div>
 
   <!-- Cloud Config -->
   <div class="cloud-cfg" id="cloudCfg" style="display:none">
@@ -1192,7 +1192,9 @@ function closeBrushReminder() {
 
 function startPause() {
   if (!cur) return;
-  if (!running && coins < COIN_PLAY_MIN) { alert('金币不足，不可以启动游戏！！！'); return; }
+  // Starting/resuming a TASK is how coins get earned back — unlike 开始消耗 (the actual
+  // 游戏/entertainment gate this restriction exists for), it must never be blocked by being
+  // low on coins, or a balance under COIN_PLAY_MIN becomes a permanent soft-lock.
   running = !running;
   if (running) {
     recordStart();
@@ -1538,8 +1540,6 @@ function updateStats() {
   document.getElementById('btnStartSpendDur').textContent = coins > 0 ? `(${fmtDur(coins / spendRate * 60000)})` : '';
   const coinsTooLow = coins < COIN_PLAY_MIN;
   document.getElementById('coinDebtWarning').style.display = coinsTooLow ? 'block' : 'none';
-  btnSP.style.opacity = coinsTooLow && !running ? '0.45' : '';
-  btnSP.style.cursor   = coinsTooLow && !running ? 'not-allowed' : '';
   const spendBtn = document.getElementById('btnStartSpend');
   spendBtn.style.opacity = coinsTooLow ? '0.45' : '';
   spendBtn.style.cursor  = coinsTooLow ? 'not-allowed' : '';

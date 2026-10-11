@@ -401,7 +401,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v103</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v104</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -512,6 +512,19 @@
     <div id="timerHint" class="hint" style="display:none">
       空格 暂停/继续 · Enter 完成 · Delete 跳过
     </div>
+  </div>
+
+  <!-- Inbox: quick capture, sort out later -->
+  <div class="section">
+    <div class="sec-head">
+      <span class="sec-label">📥 收件箱</span>
+      <span id="inboxCnt" style="font-size:.78rem;color:var(--muted)"></span>
+    </div>
+    <div style="display:flex;gap:8px">
+      <input type="text" id="iInbox" placeholder="随手记一下，待会再整理…" maxlength="100" autocomplete="off" style="flex:1" onkeydown="if(event.key==='Enter')addInboxItem()">
+      <button class="btn-add" style="width:auto;flex:none;padding:0 18px" onclick="addInboxItem()">记下</button>
+    </div>
+    <div id="inboxList"></div>
   </div>
 
   <!-- Active Queue -->
@@ -696,6 +709,7 @@ let _savedTotal   = null;
 let _savedCurId   = null;
 let skippedTasks  = [];  // { task, skippedDate } for small/big cycle skipped today
 let shelvedTasks  = [];  // tasks shelved indefinitely until manually restored
+let inboxItems    = [];  // quick-capture notes not yet turned into a real task ({ id, name, createdAt })
 let tasksTs       = 0;   // ms timestamp of last local change to tasks/bigTasks/dailyDefs/shelvedTasks/heldTasks; guards against a stale cloud pull clobbering a fresher local queue
 let _lastQueueSnap = null; // internal: snapshot used by save() to detect whether queue state actually changed
 let smallCount    = 0;   // cumulative small-cycle completions (drives big-cycle triggers)
@@ -907,6 +921,49 @@ function toggleContext() {
   else renderQ();
   renderContext();
   save();
+}
+
+// ── Inbox: zero-friction capture (no duration/type/tags to pick yet) — sort it into a
+// real task later via 转为任务, which just hands the text to the normal add-form instead
+// of guessing duration/type for you.
+function addInboxItem() {
+  const input = document.getElementById('iInbox');
+  const name = input.value.trim();
+  if (!name) { input.focus(); flash(input); return; }
+  inboxItems.unshift({ id: uid++, name, createdAt: Date.now() });
+  input.value = '';
+  input.focus();
+  renderInbox();
+  save();
+}
+function removeInboxItem(id) {
+  inboxItems = inboxItems.filter(x => x.id !== id);
+  renderInbox();
+  save();
+}
+function convertInboxItem(id) {
+  const item = inboxItems.find(x => x.id === id);
+  if (!item) return;
+  inboxItems = inboxItems.filter(x => x.id !== id);
+  renderInbox();
+  save();
+  iName.value = item.name;
+  iName.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  iName.focus();
+}
+function renderInbox() {
+  const box = document.getElementById('inboxList');
+  const cnt = document.getElementById('inboxCnt');
+  cnt.textContent = inboxItems.length > 0 ? `${inboxItems.length} 条` : '';
+  if (inboxItems.length === 0) { box.innerHTML = ''; return; }
+  box.innerHTML = inboxItems.map(item => `
+    <div class="card" style="border-left-color:var(--surf3)">
+      <div class="card-body">
+        <div class="card-name">${esc(item.name)}</div>
+      </div>
+      <button class="edit-btn" onclick="convertInboxItem(${item.id})" title="转成正式任务">→ 任务</button>
+      <button class="rm-btn" onclick="removeInboxItem(${item.id})">✕</button>
+    </div>`).join('');
 }
 
 function addTask() {
@@ -1724,7 +1781,7 @@ function spendTick() {
 }
 
 // ── Render ──
-function renderAll() { renderTimer(); renderQ(); renderDaily(); renderBig(); renderSkipped(); renderShelved(); renderDone(); }
+function renderAll() { renderTimer(); renderQ(); renderDaily(); renderBig(); renderSkipped(); renderShelved(); renderDone(); renderInbox(); }
 
 function renderSkipped() {
   // Show small/big/daily tasks skipped today
@@ -2109,7 +2166,7 @@ function esc(s) {
 // ── Persist ──
 function save() {
   try {
-    const queueSnap = JSON.stringify([tasks, bigTasks, dailyDefs, shelvedTasks, heldTasks]);
+    const queueSnap = JSON.stringify([tasks, bigTasks, dailyDefs, shelvedTasks, heldTasks, inboxItems]);
     if (queueSnap !== _lastQueueSnap) { tasksTs = Date.now(); _lastQueueSnap = queueSnap; }
     localStorage.setItem('tt_tasksTs', tasksTs);
     // Stable keys — will never change prefix again
@@ -2141,6 +2198,7 @@ function save() {
     localStorage.setItem('tt_steps', JSON.stringify({ stepsDate, stepsSeen, stepsCredited, stepsLog }));
     localStorage.setItem('tt_skipped',   JSON.stringify(skippedTasks));
     localStorage.setItem('tt_shelved',   JSON.stringify(shelvedTasks));
+    localStorage.setItem('tt_inbox',     JSON.stringify(inboxItems));
     localStorage.setItem('tt_heldTasks',  JSON.stringify(heldTasks));
     localStorage.setItem('tt_locState',   locState);
     localStorage.setItem('tt_smallCount', smallCount);
@@ -2209,6 +2267,8 @@ function load() {
     if (sk && tdd === todayStr()) skippedTasks = JSON.parse(sk);
     const sh = localStorage.getItem('tt_shelved');
     if (sh) shelvedTasks = JSON.parse(sh);
+    const ib = localStorage.getItem('tt_inbox');
+    if (ib) inboxItems = JSON.parse(ib);
     const dh = localStorage.getItem('tt_dayHeld');
     if (dh) dayHeldTasks = JSON.parse(dh);
     const th = localStorage.getItem('tt_timeHeld');
@@ -2242,7 +2302,7 @@ function load() {
     if (ld) lastDay = ld;
   } catch(_) {}
   migrateAllTags();
-  _lastQueueSnap = JSON.stringify([tasks, bigTasks, dailyDefs, shelvedTasks, heldTasks]);
+  _lastQueueSnap = JSON.stringify([tasks, bigTasks, dailyDefs, shelvedTasks, heldTasks, inboxItems]);
 }
 
 // Migrate tasks saved before tags became multi-select (singular `tag` string -> `tags` array)
@@ -2579,7 +2639,7 @@ function getCloudPayload() {
     totalToday, totalTodayDate: todayStr(),
     completedToday, completedTodayDate: todayStr(),
     coins, coinsToday, coinsTodayDate: todayStr(), coinsTs,
-    skippedTasks, shelvedTasks, tasksTs,
+    skippedTasks, shelvedTasks, inboxItems, tasksTs,
     heldTasks, timeHeldTasks, locState, smallCount, spendDifficulty,
     left, total, curId: cur ? cur.id : -1,
     spendingCoins, spendTs: Date.now(),
@@ -2597,12 +2657,13 @@ function applyCloudPayload(raw) {
     // sync on a fresh device) — otherwise a stale tab/device pushing an old snapshot would
     // silently clobber a fresher local queue (e.g. resurrect tasks that were already
     // restored from 已搁置, or re-shelve tasks that are live in the current queue).
-    const localQueueEmpty = tasks.length === 0 && bigTasks.length === 0 && dailyDefs.length === 0 && shelvedTasks.length === 0;
+    const localQueueEmpty = tasks.length === 0 && bigTasks.length === 0 && dailyDefs.length === 0 && shelvedTasks.length === 0 && inboxItems.length === 0;
     if ((d.tasksTs || 0) > tasksTs || localQueueEmpty) {
       if (d.tasks        !== undefined) tasks        = d.tasks;
       if (d.bigTasks     !== undefined) bigTasks     = d.bigTasks;
       if (d.dailyDefs    !== undefined) dailyDefs    = d.dailyDefs;
       if (d.shelvedTasks !== undefined) shelvedTasks = d.shelvedTasks;
+      if (d.inboxItems   !== undefined) inboxItems   = d.inboxItems;
       if (d.heldTasks    !== undefined) {
         heldTasks = d.heldTasks;
       } else if (d.homeTasks !== undefined || d.workTasks !== undefined) {

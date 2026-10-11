@@ -405,7 +405,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v109</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v110</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -451,7 +451,7 @@
         <span class="coin-label">🪙 金币</span>
         <span class="coin-value" id="statCoins">0</span>
         <span class="coin-sub" id="statCoinsSub">累计 0</span>
-        <span class="free-badge" id="freeBadge" hidden>🎁 免费时间 · 到 20:30</span>
+        <span class="free-badge" id="freeBadge" hidden>🎁 免费时间</span>
       </div>
       <button class="btn-start-spend" id="btnStartSpend" onclick="toggleSpendCoins()">开始消耗 <span id="btnStartSpendDur"></span></button>
     </div>
@@ -702,7 +702,9 @@ let spendStateTs  = 0;   // ms timestamp of the last local 消耗 start/stop; le
 const SPEND_OVERDRAFT_FLOOR = -120;  // keep deducting past 0 (2h worth at 1 coin/min) rather than stopping dead at 0
 // 19:00–20:30 (device local time) is free: 消耗 can start at any balance and charges nothing.
 const FREE_WINDOW = [19 * 60, 20 * 60 + 30];
+const FREE_UNTIL = new Date(2026, 9, 12, 9, 0).getTime();  // temporary: everything free until 10/12 09:00 while coin sync is being fixed
 function isFreeTime(ms = Date.now()) {
+  if (ms < FREE_UNTIL) return true;
   const d = new Date(ms), m = d.getHours() * 60 + d.getMinutes();
   return m >= FREE_WINDOW[0] && m < FREE_WINDOW[1];
 }

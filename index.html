@@ -401,7 +401,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v101</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v102</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -1007,13 +1007,23 @@ function dedupeDailyInstances() {
 }
 
 // Inject a daily def into the active queue (if not already there and not done today)
+// A def's own timeSlot/tags only matter at the moment a fresh instance is created — the
+// instance itself is what reconcileTimeVisibility()/reconcileLocVisibility() actually check,
+// same mechanism as every other task type, so it needs to carry its own copy.
+function makeDailyInstance(def) {
+  const task = { id: uid++, name: def.name, duration: def.duration, type: 'daily', dailyId: def.id, count: def.count };
+  if (def.tags) task.tags = def.tags.slice();
+  if (def.timeSlot) task.timeSlot = def.timeSlot;
+  return task;
+}
+
 function injectDaily(def) {
   const today = todayStr();
   if (def.lastCompleted === today) return;
   if (!taskActiveToday(def)) return;
   const alreadyIn = dailyInstanceExists(def.id);
   if (alreadyIn) return;
-  const task = { id: uid++, name: def.name, duration: def.duration, type: 'daily', dailyId: def.id, count: def.count };
+  const task = makeDailyInstance(def);
   pushTop(task);
   if (!cur) loadNext();
   else renderQ();
@@ -1042,7 +1052,7 @@ function checkDailyTasks() {
     if (!taskActiveToday(def)) return;
     const alreadyIn = dailyInstanceExists(def.id);
     if (alreadyIn) return;
-    const task = { id: uid++, name: def.name, duration: def.duration, type: 'daily', dailyId: def.id, count: def.count };
+    const task = makeDailyInstance(def);
     pushTop(task);
     changed = true;
   });
@@ -2416,6 +2426,16 @@ function saveModal() {
       if (!task.tags) delete task.tags;
       task.timeSlot = modalTimeSlot || undefined;
       if (!task.timeSlot) delete task.timeSlot;
+      // A daily instance is rebuilt from scratch every time it's (re-)injected — without
+      // this, tags/timeSlot set here would silently vanish the next time that happens
+      // (next day, or any self-heal cycle), same gap 出现的日子 already had to work around.
+      if (task.type === 'daily' && task.dailyId !== undefined) {
+        const def = dailyDefs.find(d => d.id === task.dailyId);
+        if (def) {
+          if (task.tags) def.tags = task.tags.slice(); else delete def.tags;
+          if (task.timeSlot) def.timeSlot = task.timeSlot; else delete def.timeSlot;
+        }
+      }
       // If the new tags/time no longer match right now, pull out of queue into the
       // matching held array (whichever check actually failed)
       if (!tagsVisible(task.tags, locState) || !timeSlotVisible(task.timeSlot)) {

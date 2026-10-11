@@ -401,7 +401,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v107</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v108</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -1281,7 +1281,7 @@ function dailyRollover() {
 
 // Sync immediately when tab becomes visible again; also check for day rollover
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) return;
+  if (document.hidden) { window.__markStale(); return; }
   if (todayStr() !== lastDay) {
     dailyRollover();
   }
@@ -1602,9 +1602,9 @@ function showStepsResult(text) {
 // ── iPhone steps (TaskTimer app reads HealthKit and calls this with today's total) ──
 // Only whole STEPS_PER_COIN chunks are credited; the remainder carries over to the next report.
 window.__nativeSteps = function (total, fromButton) {
-  // Wait for the first cloud pull: a fresh install would otherwise re-credit steps
-  // that this or another install already turned into coins today.
-  if (!cloudReady) { setTimeout(() => window.__nativeSteps(total, fromButton), 2000); return; }
+  // Wait for a fresh cloud pull: crediting onto a stale balance would overwrite coins
+  // earned on other devices meanwhile (and a fresh install would re-credit today's steps).
+  if (!cloudFresh) { setTimeout(() => window.__nativeSteps(total, fromButton), 1000); return; }
   total = Math.max(0, Math.floor(total) || 0);
   rollStepsDay();
   stepsSeen = Math.max(stepsSeen, total);
@@ -1774,6 +1774,9 @@ function convertToSpend() {
 // elapsed time (matches tick()'s approach) instead of trusting tick counts.
 function spendTick() {
   if (!spendingCoins || !spendStartAt) return;
+  // Just woke up: first learn whether another device already stopped this session or
+  // charged these minutes — otherwise a sleeping device re-charges hours at once.
+  if (!cloudFresh) return;
   const elapsedMin = Math.floor((Date.now() - spendStartAt) / 60000);
   const due = elapsedMin - spendDeducted;
   if (due > 0) {
@@ -2623,6 +2626,12 @@ let syncTimer   = null;
 // Computed synchronously here (not inside initCloud()) because init-time calls like
 // dailyRollover() can call save() before initCloud() ever runs.
 let cloudReady  = !localStorage.getItem('tt_cloud_token');
+// False from the moment this page is hidden (phone app backgrounded, tab asleep) until it
+// has pulled the gist again. Coin changes made from stale local state carry the newest
+// coinsTs and would overwrite the real balance, so 消耗 catch-up and step credits wait for it.
+let cloudFresh  = cloudReady;
+window.__markStale = () => { if (cloudToken) cloudFresh = false; };  // called by the iOS app on background
+window.__resume    = () => { if (cloudReady) pollCloud(); };          // called by the iOS app on foreground
 
 const syncChip = document.getElementById('syncChip');
 const cloudCfg = document.getElementById('cloudCfg');
@@ -2830,6 +2839,7 @@ async function loadFromCloud() {
     // Whether it succeeded, failed, or fell through to pushToCloud() above, the initial
     // pull attempt is resolved — safe to let subsequent local edits auto-push again.
     cloudReady = true;
+    cloudFresh = true;
   }
 }
 
@@ -2907,8 +2917,8 @@ function executeCmd(cmd) {
 }
 
 async function pollCloud() {
-  if (!cloudToken || !cloudGistId) return;
   try {
+    if (!cloudToken || !cloudGistId) return;
     const res = await fetch(`https://api.github.com/gists/${cloudGistId}`, {
       headers: { Authorization: `token ${cloudToken}`, Accept: 'application/vnd.github+json' }
     });
@@ -2941,7 +2951,10 @@ async function pollCloud() {
         setChip('ok', '☁ 已同步');
       }
     }
-  } catch(e) {}
+  } catch(e) {
+  } finally {
+    cloudFresh = true;  // even on failure: offline shouldn't freeze 消耗 forever
+  }
 }
 
 async function sendCmd(type) {

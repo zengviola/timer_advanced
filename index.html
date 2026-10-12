@@ -405,7 +405,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v110</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v111</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -1080,23 +1080,57 @@ function dedupeDailyInstances() {
 // (4+ options) becomes 大循环 instead — idempotent, so safe to leave running on every load.
 // Converted tasks join bigTasks (dormant, same as any newly-created big task) rather than
 // staying wherever they were, since that's what 大循环 actually means everywhere else.
+// Keeps 小循环/大循环 in sync with segment count both ways: >3 segments promotes to big,
+// and dropping back to <=3 later demotes it again — but only for a task THIS function
+// promoted (_segAutoPromoted), never a task that's big for its own unrelated reason, or one
+// where the user explicitly re-picked 大循环 themselves (saveModal clears the flag on any
+// manual type change, which is what makes that override stick).
 function migrateLongSegmentsToBig() {
   let changed = false;
-  const convertOne = t => {
+  const tooLong = t => t.name.split('/').length > 3;
+
+  const promote = t => {
     t.type = 'big';
+    t._segAutoPromoted = true;
     if (!t.trigEvery || t.trigEvery < 1) t.trigEvery = 20;
     bigTasks.push(t);
     if (cur && cur.id === t.id) { clearInterval(ticker); running = false; overSecs = 0; cur = null; }
     changed = true;
   };
-  const qualifies = t => t.type === 'small' && t.name.split('/').length > 3;
-  const sweep = arr => arr.filter(t => { if (qualifies(t)) { convertOne(t); return false; } return true; });
-  tasks         = sweep(tasks);
-  heldTasks     = sweep(heldTasks);
-  timeHeldTasks = sweep(timeHeldTasks);
-  dayHeldTasks  = sweep(dayHeldTasks);
-  shelvedTasks  = sweep(shelvedTasks);
-  skippedTasks  = skippedTasks.filter(s => { if (qualifies(s.task)) { convertOne(s.task); return false; } return true; });
+  const demote = t => {
+    t.type = 'small';
+    delete t._segAutoPromoted;
+    delete t.trigEvery;
+    if (!taskActiveToday(t)) dayHeldTasks.push(t);
+    else if (!tagsVisible(t.tags, locState)) heldTasks.push(t);
+    else if (!timeSlotVisible(t.timeSlot)) timeHeldTasks.push(t);
+    else tasks.push(t);
+    if (cur && cur.id === t.id) { clearInterval(ticker); running = false; overSecs = 0; cur = null; }
+    changed = true;
+  };
+
+  const promoteSweep = arr => arr.filter(t => {
+    if (t.type === 'small' && tooLong(t) && !t._segUserOverride) { promote(t); return false; }
+    return true;
+  });
+  tasks         = promoteSweep(tasks);
+  heldTasks     = promoteSweep(heldTasks);
+  timeHeldTasks = promoteSweep(timeHeldTasks);
+  dayHeldTasks  = promoteSweep(dayHeldTasks);
+  shelvedTasks  = promoteSweep(shelvedTasks);
+  skippedTasks  = skippedTasks.filter(s => { if (s.task.type === 'small' && tooLong(s.task)) { promote(s.task); return false; } return true; });
+
+  const demoteSweep = arr => arr.filter(t => {
+    if (t.type === 'big' && t._segAutoPromoted && !t._segUserOverride && !tooLong(t)) { demote(t); return false; }
+    return true;
+  });
+  bigTasks      = demoteSweep(bigTasks);
+  tasks         = demoteSweep(tasks);
+  heldTasks     = demoteSweep(heldTasks);
+  timeHeldTasks = demoteSweep(timeHeldTasks);
+  dayHeldTasks  = demoteSweep(dayHeldTasks);
+  shelvedTasks  = demoteSweep(shelvedTasks);
+
   return changed;
 }
 
@@ -2595,6 +2629,10 @@ function saveModal() {
         renderDaily();
       }
       task.type = newType;
+      // An explicit manual type change always wins — never let migrateLongSegmentsToBig()
+      // flip it back later just because the segment count still says otherwise.
+      task._segUserOverride = true;
+      delete task._segAutoPromoted;
     }
 
     // Sync name+duration to daily def's active queue instance (and vice versa)

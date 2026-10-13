@@ -405,7 +405,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v114</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v115</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -1971,9 +1971,14 @@ async function askAI() {
   // the raw "a/b/c" string, which otherwise reads as one garbled task name with no structure
   // for the model to recognize, let alone infer a same-flavor alternative from.
   const segs = taskName.split('/').filter(Boolean);
+  const ctx = [
+    cur.tags && cur.tags.length ? `场景标签：${cur.tags.join('、')}` : '',
+    cur.timeSlot ? `时段：${cur.timeSlot}` : '',
+    cur.duration ? `时长：约${Math.round(cur.duration / 60)}分钟` : ''
+  ].filter(Boolean).join('；');
   const promptText = segs.length > 1
-    ? `我有一个任务槽位，目前列出的可选小事有：\n${segs.map(s => `- ${s}`).join('\n')}\n\n我点了这个按钮，说明这几项我现在都不想做。请根据这些例子的性质和风格，推荐一个新的、不在上面列表里、但调性相符的替代想法，具体说清楚要做什么、怎么开始。简洁实用，不要废话，也不要原样重复列表里任何一项。`
-    : `我有一个任务，内容是："${taskName}"。请根据这个描述，具体告诉我应该做什么、怎么开始，简洁实用，不要废话。`;
+    ? `我有一个任务槽位，里面列着一组可选的小事（名字很简短，数字是数量，比如"5样"=收5样东西）：\n${segs.map(s => `- ${s}`).join('\n')}\n${ctx ? ctx + '\n' : ''}\n我点这个按钮，说明这几项我现在都不想做。请严格参照上面这些项的具体内容、颗粒度和命名风格，再推荐3个同类的、不在列表里的小事。每个用一行：简短名称（像上面那样，几个字）+ 一句话说明怎么做。不要和列表里任何一项重复，也不要给泛泛的大任务（如"整理房间"）。`
+    : `我有一个任务，内容是："${taskName}"。${ctx}\n请根据这个描述，具体告诉我应该做什么、怎么开始，简洁实用，不要废话。`;
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {

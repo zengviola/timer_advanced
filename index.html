@@ -405,7 +405,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v111</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v112</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -2532,9 +2532,9 @@ function openEditModal(id, src) {
   setModalNameSegs(task.name);
   const inp = document.getElementById('modalInput');
   inp.value = Math.ceil(task.duration / 60);
-  // Show type selector for queue and done tasks
+  // Show type selector for queue, done, and dormant big-cycle tasks
   const typeRow = document.getElementById('modalTypeRow');
-  typeRow.style.display = (src === 'queue' || src === 'done') ? 'flex' : 'none';
+  typeRow.style.display = (src === 'queue' || src === 'done' || src === 'big') ? 'flex' : 'none';
   setModalType(task.type);
   setModalTags(task.tags);
   setModalTimeSlot(task.timeSlot);
@@ -2595,7 +2595,7 @@ function saveModal() {
       // If everything still matches, nothing to do here (task stays in queue)
     }
     const oldType = task.type;
-    const newType = (editingSrc === 'queue' || editingSrc === 'done') ? modalType : oldType;
+    const newType = (editingSrc === 'queue' || editingSrc === 'done' || editingSrc === 'big') ? modalType : oldType;
     // For done tasks: update fields, then restore to queue if changed to a cycle type
     if (editingSrc === 'done') {
       task.type = newType;
@@ -2627,6 +2627,19 @@ function saveModal() {
         dailyDefs.push(def);
         task.dailyId = def.id;
         renderDaily();
+      }
+      // FROM big: it's sitting dormant in bigTasks, not in any of the normal queue
+      // arrays — pull it out and place it like migrateLongSegmentsToBig()'s demote()
+      // does, since it's no longer waiting on the small-cycle trigger.
+      if (oldType === 'big') {
+        bigTasks = bigTasks.filter(t => t.id !== task.id);
+        delete task.trigEvery;
+        renderBig();
+        if (!taskActiveToday(task)) dayHeldTasks.push(task);
+        else if (!tagsVisible(task.tags, locState)) heldTasks.push(task);
+        else if (!timeSlotVisible(task.timeSlot)) timeHeldTasks.push(task);
+        else tasks.push(task);
+        if (!cur) loadNext();
       }
       task.type = newType;
       // An explicit manual type change always wins — never let migrateLongSegmentsToBig()

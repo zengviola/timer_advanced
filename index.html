@@ -405,7 +405,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v115</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v116</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -2922,6 +2922,7 @@ async function pushToCloud() {
   // Each push replaces the whole file, so first take in any newer coins / 消耗 start-stop
   // from another device — otherwise e.g. this device's spend heartbeat would overwrite a
   // 停止 made on the other device, and neither would ever see it again.
+  let cloudQueue = null;  // cloud's queue, when it's newer than ours — must not be overwritten below
   if (cloudGistId) {
     try {
       const latest = await fetch(`https://api.github.com/gists/${cloudGistId}`, {
@@ -2930,6 +2931,7 @@ async function pushToCloud() {
       const raw = latest.ok ? (await latest.json()).files?.['timer_data.json']?.content : null;
       if (raw) {
         const d = JSON.parse(raw);
+        if ((d.tasksTs || 0) > tasksTs) cloudQueue = d;
         if ((d.coinsTs || 0) > coinsTs || (d.spendStateTs || 0) > spendStateTs) {
           applyCloudSpend(d, applyCloudCoins(d));
           updateStats(); save();
@@ -2938,10 +2940,20 @@ async function pushToCloud() {
       }
     } catch (e) { /* fall through and push what we have */ }
   }
+  // Each push replaces the whole file. If another device already pushed a newer queue (e.g. a
+  // renamed task) that this device hasn't pulled yet — it's mid-countdown, or a tab left open —
+  // keep the cloud's queue fields instead of stomping them with this device's stale copy.
+  // The next poll pulls them in once nothing is running.
+  const payload = JSON.parse(getCloudPayload());
+  if (cloudQueue) {
+    for (const key of ['tasks', 'bigTasks', 'dailyDefs', 'shelvedTasks', 'inboxItems', 'heldTasks', 'timeHeldTasks', 'tasksTs']) {
+      if (cloudQueue[key] !== undefined) payload[key] = cloudQueue[key];
+    }
+  }
   const body = JSON.stringify({
     description: 'Timer Advanced — task data',
     public: false,
-    files: { 'timer_data.json': { content: getCloudPayload() } }
+    files: { 'timer_data.json': { content: JSON.stringify(payload) } }
   });
   const headers = {
     Authorization: `token ${cloudToken}`,

@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v117</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v118</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -692,6 +692,14 @@ let completedToday = 0;
 let coins         = 0;
 let coinsToday    = 0;
 let coinsTs       = 0;   // ms timestamp of last local coins change; guards against stale cloud pulls overwriting a fresher local deduction
+// Last cloud `coins`/`coinsToday` values this device has already merged in. Cross-device
+// sync used to compare coinsTs (each device's own clock) and let whichever looked "newer"
+// overwrite the other outright — losing one side's independent earn/spend entirely when both
+// devices changed coins between syncs (and unreliable anyway if the two clocks ever drift).
+// Tracking the last-seen cloud value instead lets every merge apply just the cloud's delta
+// since then on top of this device's own pending delta, so neither side's progress is lost.
+let coinsBase      = 0;
+let coinsTodayBase = 0;
 let spendingCoins = false;
 let spendInterval = null;
 let spendStartAt  = null;
@@ -2360,6 +2368,8 @@ function save() {
     localStorage.setItem('tt_coinsToday',   coinsToday);
     localStorage.setItem('tt_coinsTodayDate', todayStr());
     localStorage.setItem('tt_coinsTs',      coinsTs);
+    localStorage.setItem('tt_coinsBase',    coinsBase);
+    localStorage.setItem('tt_coinsTodayBase', coinsTodayBase);
     localStorage.setItem('tt_spending',     spendingCoins ? '1' : '0');
     localStorage.setItem('tt_spendStartAt', spendStartAt || '');
     localStorage.setItem('tt_spendStartCoins', spendStartCoins);
@@ -2420,6 +2430,12 @@ function load() {
     if (cot && cotd === todayStr()) coinsToday = parseInt(cot) || 0;
     const cts = localStorage.getItem('tt_coinsTs');
     if (cts) coinsTs = parseInt(cts) || 0;
+    // Default to the just-restored local value (no pending unsynced delta assumed) —
+    // covers both a fresh install and the first load after this field was introduced.
+    const cb = localStorage.getItem('tt_coinsBase');
+    coinsBase = cb !== null ? (parseInt(cb) || 0) : coins;
+    const cbtd = localStorage.getItem('tt_coinsTodayBase');
+    coinsTodayBase = (cbtd !== null && cotd === todayStr()) ? (parseInt(cbtd) || 0) : coinsToday;
     const sp  = localStorage.getItem('tt_spending');
     const spa = localStorage.getItem('tt_spendStartAt');
     const spc = localStorage.getItem('tt_spendStartCoins');
@@ -2910,13 +2926,24 @@ function applyCloudPayload(raw) {
   } catch(e) { console.error('Cloud apply failed', e); }
 }
 
-// Returns whether the cloud's coins were taken (they're only taken when newer than ours).
+// Merges in whatever the cloud's coins changed by since we last looked, instead of picking
+// a winner by timestamp — that way two devices that each independently earned/spent coins
+// between syncs both keep their own change instead of one clobbering the other. Returns
+// whether anything new was actually merged.
 function applyCloudCoins(d) {
-  if ((d.coinsTs || 0) <= coinsTs) return false;
-  if (d.coins !== undefined) coins = d.coins;
-  if (d.coinsToday !== undefined && (d.coinsTodayDate || d.savedDate) === todayStr()) coinsToday = d.coinsToday;
-  coinsTs = d.coinsTs || coinsTs;
-  return true;
+  let took = false;
+  if (d.coins !== undefined && d.coins !== coinsBase) {
+    coins += d.coins - coinsBase;
+    coinsBase = d.coins;
+    took = true;
+  }
+  if (d.coinsToday !== undefined && (d.coinsTodayDate || d.savedDate) === todayStr() && d.coinsToday !== coinsTodayBase) {
+    coinsToday += d.coinsToday - coinsTodayBase;
+    coinsTodayBase = d.coinsToday;
+    took = true;
+  }
+  if (took) coinsTs = Math.max(coinsTs, d.coinsTs || 0);
+  return took;
 }
 
 // Adopts a 消耗 start/stop made on another device. While both devices run the same
@@ -3021,8 +3048,12 @@ async function pushToCloud() {
       if (raw) {
         const d = JSON.parse(raw);
         if ((d.tasksTs || 0) > tasksTs) cloudQueue = d;
-        if ((d.coinsTs || 0) > coinsTs || (d.spendStateTs || 0) > spendStateTs) {
-          applyCloudSpend(d, applyCloudCoins(d));
+        // applyCloudCoins() merges deltas and is a no-op when nothing's actually new, so it's
+        // safe (and necessary, to keep coinsBase current) to always call it here rather than
+        // gate on a cross-device timestamp comparison.
+        const tookCoins = applyCloudCoins(d);
+        if (tookCoins || (d.spendStateTs || 0) > spendStateTs) {
+          applyCloudSpend(d, tookCoins);
           updateStats(); save();
         }
         applyCloudSteps(d);
@@ -3063,6 +3094,14 @@ async function pushToCloud() {
       localStorage.setItem('tt_cloud_gist', cloudGistId);
       updateGistLink();
     }
+    // The cloud now holds exactly what we just sent — record it as the baseline so the next
+    // merge applies only what changes from here, instead of re-adding this push's own delta.
+    coinsBase = payload.coins;
+    coinsTodayBase = payload.coinsToday;
+    try {
+      localStorage.setItem('tt_coinsBase', coinsBase);
+      localStorage.setItem('tt_coinsTodayBase', coinsTodayBase);
+    } catch(_) {}
     setChip('ok', '☁ 已同步');
   } catch(e) {
     console.error('Cloud push error', e);
@@ -3111,13 +3150,14 @@ async function pollCloud() {
     const dataRaw = gist.files?.['timer_data.json']?.content;
     if (dataRaw) {
       const d = JSON.parse(dataRaw);
-      const coinsNewer = (d.coinsTs || 0) > coinsTs;
+      const coinsChanged = (d.coins !== undefined && d.coins !== coinsBase)
+        || (d.coinsToday !== undefined && (d.coinsTodayDate || d.savedDate) === todayStr() && d.coinsToday !== coinsTodayBase);
       const spendNewer = (d.spendStateTs || 0) > spendStateTs;
-      if (!running && ((d.tasksTs || 0) > tasksTs || coinsNewer || spendNewer)) {
+      if (!running && ((d.tasksTs || 0) > tasksTs || coinsChanged || spendNewer)) {
         applyCloudPayload(dataRaw);
         updateStats(); save();
         setChip('ok', '☁ 已同步');
-      } else if (running && (coinsNewer || spendNewer)) {
+      } else if (running && (coinsChanged || spendNewer)) {
         // Coins and 消耗 don't touch the countdown, so these sync even mid-task.
         applyCloudSpend(d, applyCloudCoins(d));
         applyCloudSteps(d);

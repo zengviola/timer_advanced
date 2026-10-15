@@ -286,6 +286,9 @@
     .alarm-icon { font-size: 2.4rem; text-align: center; animation: alarmPulse 1s infinite; }
     @keyframes alarmPulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
     .btn-confirm-alarm { background: var(--danger); color: #fff; width: 100%; }
+    .btn-confirm-checkin { background: var(--once); color: #fff; }
+    .checkin-text { font-size: 0.85rem; color: var(--muted); text-align: center; line-height: 1.6; margin-bottom: 14px; }
+    .checkin-text b { color: var(--text); font-variant-numeric: tabular-nums; }
 
     .edit-btn {
       border: none; background: var(--surf2); color: var(--muted); cursor: pointer;
@@ -405,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v116</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v117</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -698,6 +701,8 @@ let spendGross    = 0;   // coins actually taken by the spend timer itself this 
 let spendEarned   = 0;   // coins earned by completing tasks while this spend session is active
 let spendAlarmFired = false;  // the coin alarm has already fired for this spend session (don't repeat it every tick)
 let spendLastHeartbeat = 0;  // last time spendTick() force-pushed just to keep spendTs fresh (see spendTick)
+let spendConfirmedAt    = 0;  // last time someone answered 继续 to the night check-in (0 = not yet this session)
+let spendGrossAtConfirm = 0;  // spendGross at that moment; what's charged after it gets refunded if the next check-in goes unanswered
 let spendStateTs  = 0;   // ms timestamp of the last local 消耗 start/stop; lets other devices adopt it without a stale pull undoing it
 const SPEND_OVERDRAFT_FLOOR = -120;  // keep deducting past 0 (2h worth at 1 coin/min) rather than stopping dead at 0
 // 19:00–20:30 (device local time) is free: 消耗 can start at any balance and charges nothing.
@@ -1721,6 +1726,7 @@ function toggleSpendCoins() {
     clearInterval(spendInterval); spendInterval = null;
     spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
     spendGross = 0; spendEarned = 0; spendStateTs = Date.now();
+    spendConfirmedAt = 0; spendGrossAtConfirm = 0; hideCheckin();
     updateStats(); save();
     if (cloudReady) pushToCloud();  // bypass the debounce — an external tool (e.g. a Steam-blocking guard) may be gating on spendingCoins and needs this promptly, not after a 3s delay
     return;
@@ -1741,6 +1747,7 @@ function startSpendCoins() {
   spendAlarmFired = false;
   spendLastHeartbeat = Date.now();
   spendStateTs    = Date.now();
+  spendConfirmedAt = 0; spendGrossAtConfirm = 0;
   updateStats(); save();
   if (cloudReady) pushToCloud();  // same as above — push the new spendingCoins=true state immediately
   spendInterval = setInterval(spendTick, 1000);
@@ -1787,6 +1794,7 @@ function confirmCoinAlarm() {
     clearInterval(spendInterval); spendInterval = null;
     spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
     spendGross = 0; spendEarned = 0; spendStateTs = Date.now();
+    spendConfirmedAt = 0; spendGrossAtConfirm = 0; hideCheckin();
     updateStats(); save();
     if (cloudReady) pushToCloud();  // see toggleSpendCoins() — push spendingCoins=false immediately, don't wait on the debounce
   }
@@ -1820,6 +1828,79 @@ function convertToSpend() {
 // Timestamp-based, not a plain counter — mobile browsers throttle/suspend
 // setInterval while the app is backgrounded, so we recompute from wall-clock
 // elapsed time (matches tick()'s approach) instead of trusting tick counts.
+// ── Night check-in: from 20:30, every 30 min of 消耗 asks 还在玩吗？ ──
+// Unanswered for 5 min → stop 消耗 and refund everything charged since the last 继续,
+// so falling asleep with 消耗 on doesn't drain the balance overnight.
+const CHECKIN_EVERY_MIN = 30;
+const CHECKIN_WAIT_MIN  = 5;
+let checkinBeep = null;
+
+function isCheckinHour(ms) {
+  const d = new Date(ms), m = d.getHours() * 60 + d.getMinutes();
+  return m >= 20 * 60 + 30 || m < 6 * 60;
+}
+
+function checkinDue() {
+  let base = spendConfirmedAt || spendStartAt;
+  if (!isCheckinHour(base)) {  // started before 20:30: the first 30 min count from 20:30
+    const d = new Date(base); d.setHours(20, 30, 0, 0); base = d.getTime();
+  }
+  return base + CHECKIN_EVERY_MIN * 60000;
+}
+
+// The modals sit after this script, so during page init these elements may not exist yet.
+function hideCheckin() {
+  const modal = document.getElementById('spendCheckinModal');
+  if (modal) modal.style.display = 'none';
+  clearInterval(checkinBeep); checkinBeep = null;
+}
+
+// Returns true if it just stopped the session.
+function checkSpendCheckin() {
+  const modal = document.getElementById('spendCheckinModal');
+  if (!modal) return false;
+  const now = Date.now(), due = checkinDue();
+  if (now < due || !isCheckinHour(now)) { hideCheckin(); return false; }
+  const deadline = due + CHECKIN_WAIT_MIN * 60000;
+  if (now >= deadline) { autoStopSpend(); return true; }
+  if (modal.style.display !== 'flex') {
+    modal.style.display = 'flex';
+    beep(); checkinBeep = setInterval(beep, 3000);
+  }
+  const left = Math.ceil((deadline - now) / 1000);
+  document.getElementById('checkinCountdown').textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+  document.getElementById('checkinRefund').textContent = Math.max(0, spendGross - spendGrossAtConfirm);
+  return false;
+}
+
+function confirmCheckin() {
+  spendConfirmedAt = Date.now();
+  spendGrossAtConfirm = spendGross;
+  spendStateTs = Date.now();  // so other devices running this session adopt it and close their prompt
+  hideCheckin();
+  save();
+  if (cloudReady) pushToCloud();
+}
+
+function stopFromCheckin() {
+  hideCheckin();
+  if (spendingCoins) toggleSpendCoins();  // an answer means they're here: plain stop, no refund
+}
+
+function autoStopSpend() {
+  const refund = Math.max(0, spendGross - spendGrossAtConfirm);
+  coins += refund; coinsToday += refund; coinsTs = Date.now();
+  clearInterval(spendInterval); spendInterval = null;
+  spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
+  spendGross = 0; spendEarned = 0; spendStateTs = Date.now();
+  spendConfirmedAt = 0; spendGrossAtConfirm = 0;
+  hideCheckin();
+  document.getElementById('checkinStoppedRefund').textContent = refund;
+  document.getElementById('checkinStoppedModal').style.display = 'flex';
+  updateStats(); save();
+  if (cloudReady) pushToCloud();
+}
+
 function spendTick() {
   if (!spendingCoins || !spendStartAt) return;
   // Just woke up: first learn whether another device already stopped this session or
@@ -1847,6 +1928,7 @@ function spendTick() {
     spendAlarmFired = true;
     startCoinAlarm();
   }
+  if (checkSpendCheckin()) return;  // session just auto-stopped
   // Coin deduction only saves once per elapsed minute, which would otherwise leave spendTs
   // looking stale for up to a minute at a time to anything watching it externally (e.g. a
   // Steam-blocking guard script) during a session that's genuinely still active every second.
@@ -2285,6 +2367,7 @@ function save() {
     localStorage.setItem('tt_spendEarned',  spendEarned);
     localStorage.setItem('tt_spendDeducted', spendDeducted);
     localStorage.setItem('tt_spendStateTs', spendStateTs);
+    localStorage.setItem('tt_spendCheckin', JSON.stringify([spendConfirmedAt, spendGrossAtConfirm]));
     localStorage.setItem('tt_spendDifficulty', spendDifficulty);
     localStorage.setItem('tt_steps', JSON.stringify({ stepsDate, stepsSeen, stepsCredited, stepsLog }));
     localStorage.setItem('tt_skipped',   JSON.stringify(skippedTasks));
@@ -2351,6 +2434,7 @@ function load() {
       spendStartCoins = spc !== null ? (parseInt(spc) || 0) : coins;
       spendGross      = spg !== null ? (parseInt(spg) || 0) : 0;
       spendEarned     = spe !== null ? (parseInt(spe) || 0) : 0;
+      [spendConfirmedAt, spendGrossAtConfirm] = JSON.parse(localStorage.getItem('tt_spendCheckin') || '[0,0]');
       if (spdd !== null) spendDeducted = parseInt(spdd) || 0;
       else spendDeducted = Math.floor((Date.now() - spendStartAt) / 60000);  // pre-fix save: assume minutes so far were already charged rather than charging them twice
     }
@@ -2759,6 +2843,7 @@ function getCloudPayload() {
     left, total, curId: cur ? cur.id : -1,
     spendingCoins, spendTs: Date.now(),
     spendStateTs, spendStartAt, spendDeducted, spendStartCoins, spendGross, spendEarned,
+    spendConfirmedAt, spendGrossAtConfirm,
     stepsDate, stepsSeen, stepsCredited, stepsLog,
     savedDate: todayStr()
   });
@@ -2848,12 +2933,16 @@ function applyCloudSpend(d, tookCoins) {
       spendStartCoins = d.spendStartCoins ?? coins;
       spendGross      = d.spendGross || 0;
       spendEarned     = d.spendEarned || 0;
+      spendConfirmedAt    = d.spendConfirmedAt || 0;
+      spendGrossAtConfirm = d.spendGrossAtConfirm || 0;
       spendAlarmFired = false;
       spendInterval   = setInterval(spendTick, 1000);
     } else {
       spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
       spendGross = 0; spendEarned = 0;
+      spendConfirmedAt = 0; spendGrossAtConfirm = 0;
     }
+    if (!spendingCoins || Date.now() < checkinDue()) hideCheckin();
   } else if (tookCoins && spendingCoins && d.spendingCoins && d.spendStartAt === spendStartAt) {
     spendDeducted = d.spendDeducted || 0;
     spendGross    = d.spendGross || 0;
@@ -3157,6 +3246,29 @@ initCloud();
 </div>
 
 <!-- Coin Alarm Modal: stays up, sounding, until manually confirmed -->
+<div id="spendCheckinModal" class="modal-backdrop" style="display:none">
+  <div class="modal-box">
+    <div class="alarm-icon">⏰</div>
+    <div class="modal-title" style="text-align:center">还在玩吗？</div>
+    <div class="checkin-text"><b id="checkinCountdown">5:00</b> 内不点「继续」，就停止消耗，<br>并退回这段时间扣的 <b id="checkinRefund">0</b> 金币。</div>
+    <div class="modal-btns">
+      <button class="btn-muted" onclick="stopFromCheckin()">停止消耗</button>
+      <button class="btn-confirm-checkin" onclick="confirmCheckin()">继续</button>
+    </div>
+  </div>
+</div>
+
+<div id="checkinStoppedModal" class="modal-backdrop" style="display:none">
+  <div class="modal-box">
+    <div class="alarm-icon">🛑</div>
+    <div class="modal-title" style="text-align:center">已自动停止消耗</div>
+    <div class="checkin-text">没有点「继续」，已退回 <b id="checkinStoppedRefund">0</b> 金币。</div>
+    <div class="modal-btns">
+      <button class="btn-confirm-checkin" onclick="document.getElementById('checkinStoppedModal').style.display='none'">知道了</button>
+    </div>
+  </div>
+</div>
+
 <div id="coinAlarmModal" class="modal-backdrop" style="display:none">
   <div class="modal-box">
     <div class="alarm-icon">🔔</div>

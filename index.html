@@ -454,7 +454,7 @@
         <span class="coin-label">🪙 金币</span>
         <span class="coin-value" id="statCoins">0</span>
         <span class="coin-sub" id="statCoinsSub">累计 0</span>
-        <span class="free-badge" id="freeBadge" hidden>🎁 免费时间 · 到 20:30</span>
+        <span class="free-badge" id="freeBadge" hidden>🎁 免费时间</span>
       </div>
       <button class="btn-start-spend" id="btnStartSpend" onclick="toggleSpendCoins()">开始消耗 <span id="btnStartSpendDur"></span></button>
     </div>
@@ -714,9 +714,13 @@ let spendGrossAtConfirm = 0;  // spendGross at that moment; what's charged after
 let spendStateTs  = 0;   // ms timestamp of the last local 消耗 start/stop; lets other devices adopt it without a stale pull undoing it
 const SPEND_OVERDRAFT_FLOOR = -120;  // keep deducting past 0 (2h worth at 1 coin/min) rather than stopping dead at 0
 // 19:00–20:30 (device local time) is free: 消耗 can start at any balance and charges nothing.
+// On Fri/Sat nights the window runs from 19:00 all the way to midnight instead.
 const FREE_WINDOW = [19 * 60, 20 * 60 + 30];
+const FREE_WINDOW_WEEKEND_START = 19 * 60;
 function isFreeTime(ms = Date.now()) {
   const d = new Date(ms), m = d.getHours() * 60 + d.getMinutes();
+  const day = d.getDay();  // 5 = Friday, 6 = Saturday
+  if (day === 5 || day === 6) return m >= FREE_WINDOW_WEEKEND_START;
   return m >= FREE_WINDOW[0] && m < FREE_WINDOW[1];
 }
 const COIN_PLAY_MIN = 5;  // below this balance (negative included), starting anything is blocked
@@ -1618,7 +1622,13 @@ function fmtDur(ms) {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 function updateStats() {
-  document.getElementById('freeBadge').hidden = !isFreeTime();
+  const freeNow = isFreeTime();
+  const freeBadge = document.getElementById('freeBadge');
+  freeBadge.hidden = !freeNow;
+  if (freeNow) {
+    const day = new Date().getDay();
+    freeBadge.textContent = '🎁 免费时间' + ((day === 5 || day === 6) ? ' · 到 24:00' : ' · 到 20:30');
+  }
   document.getElementById('statCoins').textContent    = coinsToday;
   const spendRate = SPEND_RATE[spendDifficulty] || 1;
   document.getElementById('statCoinsSub').textContent = `累计 ${coins} · 可消耗 ${fmtDur(coins / spendRate * 60000)}`;

@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v122</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v123</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出分段任务每个小项的累计完成次数">📊 导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
@@ -1236,11 +1236,18 @@ function loadNext(autoStart = false) {
   running = false;
   overSecs = 0;
   timerStartedAt = null;
-  // Queue is empty but big tasks exist — promote them regardless of trigger count
+  // Queue is empty but big tasks exist — promote them regardless of trigger count, but
+  // only the ones that actually match today/the current location/the current time slot;
+  // otherwise this would dump e.g. a 家_上班-tagged big task into view while 出去玩 is
+  // active just because nothing else happened to be left in the visible queue.
   if (tasks.length === 0 && bigTasks.length > 0) {
-    bigTasks.forEach(bt => tasks.push(bt));
-    bigTasks = [];
-    renderBig();
+    const revivable = bigTasks.filter(bt =>
+      taskActiveToday(bt) && tagsVisible(bt.tags, locState) && timeSlotVisible(bt.timeSlot));
+    if (revivable.length > 0) {
+      bigTasks = bigTasks.filter(bt => !revivable.includes(bt));
+      revivable.forEach(bt => tasks.push(bt));
+      renderBig();
+    }
   }
   cur = tasks.length > 0 ? tasks[0] : null;
   if (cur) {
@@ -1479,7 +1486,14 @@ function checkTriggers() {
     return true;
   });
   if (fired.length > 0) {
-    fired.forEach(bt => { if (taskActiveToday(bt)) pushTop(bt); else dayHeldTasks.push(bt); });
+    fired.forEach(bt => {
+      if (!taskActiveToday(bt)) { dayHeldTasks.push(bt); return; }
+      // Tag/time-slot mismatch isn't a held state for big tasks (there's no dedicated
+      // array for it) — just leave it dormant; it'll be reconsidered on the next trigger
+      // or whenever the queue runs empty and loadNext() re-checks visibility itself.
+      if (!tagsVisible(bt.tags, locState) || !timeSlotVisible(bt.timeSlot)) { bigTasks.push(bt); return; }
+      pushTop(bt);
+    });
     renderBig();
   }
 }

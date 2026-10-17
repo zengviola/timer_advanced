@@ -408,7 +408,8 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v120</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v121</span></div>
+    <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出分段任务每个小项的累计完成次数">📊 导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -1354,14 +1355,49 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // For a '/'-segmented name (收一样物品/组装一样东西/接水/...), tracks how many times each
-// individual segment specifically was the active one when the task got completed today —
+// individual segment specifically was the active one when the task got completed —
 // t.dayCount already covers the task as a whole, this breaks that down per segment.
+// t.segCounts is today-only (reset at midnight alongside dayCount, for the in-app badge);
+// t.segCountsTotal is the same breakdown but never reset, for the CSV export.
 function recordSegCompletion(t) {
   const parts = t.name.split('/');
   if (parts.length <= 1) return;
   if (!t.segCounts) t.segCounts = {};
+  if (!t.segCountsTotal) t.segCountsTotal = {};
   const segText = parts[(t.nameSegIdx || 0) % parts.length];
   t.segCounts[segText] = (t.segCounts[segText] || 0) + 1;
+  t.segCountsTotal[segText] = (t.segCountsTotal[segText] || 0) + 1;
+}
+
+// Exports every '/'-segmented task's per-segment lifetime completion count (segCountsTotal)
+// as a downloadable CSV — one row per segment, including segments never completed (count 0).
+function exportSegCountsCsv() {
+  const rows = [['任务名', '小项', '累计次数']];
+  const seen = new Set();
+  const addTask = t => {
+    if (!t || seen.has(t.id)) return;
+    seen.add(t.id);
+    const parts = t.name.split('/');
+    if (parts.length <= 1) return;
+    const counts = t.segCountsTotal || {};
+    parts.forEach(seg => rows.push([t.name, seg, counts[seg] || 0]));
+  };
+  [tasks, bigTasks, heldTasks, timeHeldTasks, dayHeldTasks, shelvedTasks, done, dailyDefs]
+    .forEach(list => list.forEach(addTask));
+  skippedTasks.forEach(s => addTask(s.task));
+
+  if (rows.length === 1) { alert('没有带 "/" 分段的任务，没有数据可导出'); return; }
+
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `分段任务次数_${todayStr()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function doComplete() {

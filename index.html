@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v124</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v126</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出分段任务每个小项的累计完成次数">📊 导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
@@ -1923,15 +1923,23 @@ const CHECKIN_EVERY_MIN = 30;
 const CHECKIN_WAIT_MIN  = 5;
 let checkinBeep = null;
 
+// Minutes after midnight when that day's free time ends: 20:30, or midnight on Fri/Sat.
+function freeEndMinutes(d) {
+  const day = d.getDay();
+  return (day === 5 || day === 6) ? 24 * 60 : FREE_WINDOW[1];
+}
+
+// Check-ins run from the end of the evening's free time until 06:00 — never during free time.
 function isCheckinHour(ms) {
   const d = new Date(ms), m = d.getHours() * 60 + d.getMinutes();
-  return m >= 20 * 60 + 30 || m < 6 * 60;
+  return m >= freeEndMinutes(d) || m < 6 * 60;
 }
 
 function checkinDue() {
   let base = spendConfirmedAt || spendStartAt;
-  if (!isCheckinHour(base)) {  // started before 20:30: the first 30 min count from 20:30
-    const d = new Date(base); d.setHours(20, 30, 0, 0); base = d.getTime();
+  if (!isCheckinHour(base)) {  // started before free time ended: the first 30 min count from its end
+    const d = new Date(base), end = freeEndMinutes(d);
+    d.setHours(0, 0, 0, 0); base = d.getTime() + end * 60000;
   }
   return base + CHECKIN_EVERY_MIN * 60000;
 }

@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v123</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v124</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出分段任务每个小项的累计完成次数">📊 导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
@@ -1376,6 +1376,24 @@ function recordSegCompletion(t) {
   const segText = parts[(t.nameSegIdx || 0) % parts.length];
   t.segCounts[segText] = (t.segCounts[segText] || 0) + 1;
   t.segCountsTotal[segText] = (t.segCountsTotal[segText] || 0) + 1;
+}
+
+// segCountsTotal was introduced after segCounts already existed, so a segment completed
+// earlier (on a cached pre-upgrade tab, or just before this field shipped) has a count the
+// user can see in the in-app badge but segCountsTotal never recorded — showing as 0 in the
+// export even though it clearly isn't. Catches it up to whatever segCounts already shows,
+// which is always a legitimate lower bound on the true lifetime count.
+function backfillSegCountsTotal(t) {
+  if (!t || !t.segCounts) return;
+  if (!t.segCountsTotal) t.segCountsTotal = {};
+  Object.keys(t.segCounts).forEach(seg => {
+    if ((t.segCountsTotal[seg] || 0) < t.segCounts[seg]) t.segCountsTotal[seg] = t.segCounts[seg];
+  });
+}
+function backfillAllSegCountsTotal() {
+  [tasks, bigTasks, heldTasks, timeHeldTasks, dayHeldTasks, shelvedTasks, done, dailyDefs]
+    .forEach(arr => arr.forEach(backfillSegCountsTotal));
+  skippedTasks.forEach(s => backfillSegCountsTotal(s.task));
 }
 
 // Exports every '/'-segmented task's per-segment lifetime completion count (segCountsTotal)
@@ -2983,6 +3001,7 @@ function applyCloudPayload(raw) {
     migrateAllTags();
     dedupeDailyInstances();
     migrateLongSegmentsToBig();
+    backfillAllSegCountsTotal();
     reconcileLocVisibility();
     reconcileTimeVisibility();
     renderContext();
@@ -3267,6 +3286,7 @@ function initCloud() {
 load();
 dedupeDailyInstances();
 migrateLongSegmentsToBig();
+backfillAllSegCountsTotal();
 renderSpendDifficultyToggle();
 if (todayStr() !== lastDay) dailyRollover();  // catch up if the app was closed across midnight
 reconcileLocVisibility();

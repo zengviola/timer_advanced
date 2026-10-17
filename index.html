@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v118</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v119</span></div>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -1868,7 +1868,9 @@ function checkSpendCheckin() {
   const modal = document.getElementById('spendCheckinModal');
   if (!modal) return false;
   const now = Date.now(), due = checkinDue();
-  if (now < due || !isCheckinHour(now)) { hideCheckin(); return false; }
+  // Keyed off when the check-in was due, not the current time: a device waking at 10:00
+  // must still honour a check-in that went unanswered at 21:47 the night before.
+  if (now < due || !isCheckinHour(due)) { hideCheckin(); return false; }
   const deadline = due + CHECKIN_WAIT_MIN * 60000;
   if (now >= deadline) { autoStopSpend(); return true; }
   if (modal.style.display !== 'flex') {
@@ -1914,6 +1916,8 @@ function spendTick() {
   // Just woke up: first learn whether another device already stopped this session or
   // charged these minutes — otherwise a sleeping device re-charges hours at once.
   if (!cloudFresh) return;
+  // An unanswered check-in ends the session before anything else gets charged.
+  if (checkSpendCheckin()) return;
   const elapsedMin = Math.floor((Date.now() - spendStartAt) / 60000);
   const due = elapsedMin - spendDeducted;
   if (due > 0) {

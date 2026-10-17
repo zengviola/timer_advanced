@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v121</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v122</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出分段任务每个小项的累计完成次数">📊 导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
@@ -621,6 +621,7 @@
           <button class="type-btn"            data-tag="家_上班" onclick="toggleSelTag('家_上班')">🏠 家_上班</button>
           <button class="type-btn"            data-tag="家_下班" onclick="toggleSelTag('家_下班')">🏠 家_下班</button>
           <button class="type-btn"            data-tag="工作" onclick="toggleSelTag('工作')">💼 工作</button>
+          <button class="type-btn"            data-tag="出去玩" onclick="toggleSelTag('出去玩')">🎉 出去玩</button>
         </div>
       </div>
     </div>
@@ -745,16 +746,17 @@ let smallCount    = 0;   // cumulative small-cycle completions (drives big-cycle
 let locState      = 'work'; // 'home_before' | 'work' | 'home_after' — current location
 let heldTasks     = [];    // tasks pulled out of the queue because their tag doesn't match locState
 let timeHeldTasks = [];    // tasks pulled out of the queue because their timeSlot doesn't match the current clock time
-const LOC_ORDER = ['home_before', 'work', 'home_after'];
-const LOC_LABEL = { home_before: '家 · 上班中', work: '公司', home_after: '家 · 下班后' };
-const LOC_SUB   = { home_before: '其他任务已隐藏', work: '家庭任务已隐藏', home_after: '其他任务已隐藏' };
-const LOC_COLOR = { home_before: 'var(--small)', work: 'var(--once)', home_after: 'var(--small)' };
+const LOC_ORDER = ['home_before', 'work', 'home_after', 'out'];
+const LOC_LABEL = { home_before: '家 · 上班中', work: '公司', home_after: '家 · 下班后', out: '出去玩' };
+const LOC_SUB   = { home_before: '其他任务已隐藏', work: '家庭任务已隐藏', home_after: '其他任务已隐藏', out: '其他任务已隐藏' };
+const LOC_COLOR = { home_before: 'var(--small)', work: 'var(--once)', home_after: 'var(--small)', out: 'var(--big)' };
 // Which tag (if any) stays visible in a given location; tasks with any other tag are held aside.
 function tagVisible(tag, state) {
   if (!tag) return true;
   if (state === 'home_before') return tag === '家_上班';
   if (state === 'work')        return tag === '工作';
   if (state === 'home_after')  return tag === '家_下班';
+  if (state === 'out')         return tag === '出去玩';
   return true;
 }
 // A task can carry several tags at once; it's visible if it has none, or if any one of them matches.
@@ -3296,6 +3298,7 @@ initCloud();
         <button class="type-btn" data-tag="家_上班" onclick="toggleModalTag('家_上班')">🏠 家_上班</button>
         <button class="type-btn" data-tag="家_下班" onclick="toggleModalTag('家_下班')">🏠 家_下班</button>
         <button class="type-btn" data-tag="工作" onclick="toggleModalTag('工作')">💼 工作</button>
+        <button class="type-btn" data-tag="出去玩" onclick="toggleModalTag('出去玩')">🎉 出去玩</button>
       </div>
     </div>
     <div class="fg">

@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v129</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v130</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -1508,7 +1508,12 @@ function doComplete() {
     if (t.dayCountDate !== _tdb) { t.dayCount = 0; t.dayCountDate = _tdb; t.segCounts = {}; }
     t.dayCount = (t.dayCount || 0) + 1;
     recordSegCompletion(t);
-    bigTasks.push(t);       // big cycle → back to dormant, waits for next small-cycle trigger
+    // A 大循环 completion counts toward the "每 N 次触发" counter too, same as a 小循环
+    // one — otherwise a queue with no 小循环 tasks left in rotation at all (every task
+    // promoted to 大循环) can never advance smallCount, so nothing can ever trigger again.
+    smallCount++;
+    bigTasks.push(t);       // big cycle → back to dormant, waits for next trigger
+    checkTriggers();
     renderBig();
 
   } else if (t.type === 'daily') {

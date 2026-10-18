@@ -408,8 +408,9 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v127</span></div>
-    <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出分段任务每个小项的累计完成次数">📊 导出</button>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v128</span></div>
+    <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
+    <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
   </div>
 
@@ -1396,37 +1397,72 @@ function backfillAllSegCountsTotal() {
   skippedTasks.forEach(s => backfillSegCountsTotal(s.task));
 }
 
+// Walks every task once (dedup'd by id) and hands it to fn — shared by both export modes
+// below so they see exactly the same set of tasks.
+function forEachExportableTask(fn) {
+  const seen = new Set();
+  const addTask = t => {
+    if (!t || seen.has(t.id)) return;
+    seen.add(t.id);
+    fn(t);
+  };
+  [tasks, bigTasks, heldTasks, timeHeldTasks, dayHeldTasks, shelvedTasks, done, dailyDefs]
+    .forEach(list => list.forEach(addTask));
+  skippedTasks.forEach(s => addTask(s.task));
+}
+
+function downloadCsv(rows, filenameSuffix) {
+  if (rows.length === 1) { alert('没有任务数据可导出'); return; }
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `任务完成次数_${filenameSuffix}_${todayStr()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 // Exports every task's lifetime completion count as a downloadable CSV. '/'-segmented tasks
 // get one row per segment (segCountsTotal, including segments never completed — count 0);
 // plain tasks get a single row using their own lifetime count (t.count) — the field the
 // in-app "×N" badge already reads, so a non-segmented task is never silently left out.
 function exportSegCountsCsv() {
   const rows = [['任务名', '小项', '累计次数']];
-  const seen = new Set();
-  const addTask = t => {
-    if (!t || seen.has(t.id)) return;
-    seen.add(t.id);
+  forEachExportableTask(t => {
     const parts = t.name.split('/');
     if (parts.length <= 1) { rows.push([t.name, t.name, t.count || 0]); return; }
     const counts = t.segCountsTotal || {};
     parts.forEach(seg => rows.push([t.name, seg, counts[seg] || 0]));
-  };
-  [tasks, bigTasks, heldTasks, timeHeldTasks, dayHeldTasks, shelvedTasks, done, dailyDefs]
-    .forEach(list => list.forEach(addTask));
-  skippedTasks.forEach(s => addTask(s.task));
+  });
+  downloadCsv(rows, '总');
+}
 
-  if (rows.length === 1) { alert('没有任务数据可导出'); return; }
-
-  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
-  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `任务完成次数_${todayStr()}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+// Same shape as exportSegCountsCsv(), but each count is relative to a per-task baseline
+// (_expBaseCount / _expBaseSeg) recorded the last time this was run — so it reports only
+// what changed since the previous 区间导出, not the lifetime total. First run ever behaves
+// like the total export (no baseline yet = everything counts as "since the beginning").
+// Marks a fresh baseline on every task afterward so the next run starts counting from here.
+function exportDeltaCountsCsv() {
+  const rows = [['任务名', '小项', '本次统计次数']];
+  forEachExportableTask(t => {
+    const parts = t.name.split('/');
+    if (parts.length <= 1) {
+      rows.push([t.name, t.name, (t.count || 0) - (t._expBaseCount || 0)]);
+      return;
+    }
+    const counts = t.segCountsTotal || {};
+    const base = t._expBaseSeg || {};
+    parts.forEach(seg => rows.push([t.name, seg, (counts[seg] || 0) - (base[seg] || 0)]));
+  });
+  downloadCsv(rows, '区间');
+  forEachExportableTask(t => {
+    t._expBaseCount = t.count || 0;
+    t._expBaseSeg = Object.assign({}, t.segCountsTotal || {});
+  });
+  save();
 }
 
 function doComplete() {

@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v128</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v129</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -2061,6 +2061,13 @@ function spendTick() {
     spendDeducted = elapsedMin;
     coinsTs = Date.now();
     save();
+    // save() already debounces a push a few seconds from now — that counts as keeping
+    // spendTs fresh just as well as the heartbeat below would, so reset its clock here too.
+    // Without this, the per-minute deduction push and the independent 60s heartbeat push
+    // drift in and out of phase with each other and end up firing roughly every 20-30s
+    // combined instead of every 60s — nearly double the write rate, which is enough on its
+    // own to blow through GitHub's 100/hour gist-write limit during a single long 消耗 session.
+    spendLastHeartbeat = Date.now();
   }
   if (coins <= 0 && !spendAlarmFired) {
     spendAlarmFired = true;

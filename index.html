@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v131</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v132</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -741,6 +741,10 @@ let _savedCurId   = null;
 let skippedTasks  = [];  // { task, skippedDate } for small/big cycle skipped today
 let shelvedTasks  = [];  // tasks shelved indefinitely until manually restored
 let inboxItems    = [];  // quick-capture notes not yet turned into a real task ({ id, name, createdAt })
+// Its own timestamp, independent of tasksTs — an inbox note added on one device must not
+// get silently dropped on another just because that other device happened to touch its own
+// task queue more recently (which used to bundle inboxItems in under the same tasksTs gate).
+let inboxTs       = 0;
 let tasksTs       = 0;   // ms timestamp of last local change to tasks/bigTasks/dailyDefs/shelvedTasks/heldTasks; guards against a stale cloud pull clobbering a fresher local queue
 let _lastQueueSnap = null; // internal: snapshot used by save() to detect whether queue state actually changed
 let smallCount    = 0;   // cumulative small-cycle completions (drives big-cycle triggers)
@@ -963,6 +967,7 @@ function addInboxItem() {
   const name = input.value.trim();
   if (!name) { input.focus(); flash(input); return; }
   inboxItems.unshift({ id: uid++, name, createdAt: Date.now() });
+  inboxTs = Date.now();
   input.value = '';
   input.focus();
   renderInbox();
@@ -970,6 +975,7 @@ function addInboxItem() {
 }
 function removeInboxItem(id) {
   inboxItems = inboxItems.filter(x => x.id !== id);
+  inboxTs = Date.now();
   renderInbox();
   save();
 }
@@ -977,6 +983,7 @@ function convertInboxItem(id) {
   const item = inboxItems.find(x => x.id === id);
   if (!item) return;
   inboxItems = inboxItems.filter(x => x.id !== id);
+  inboxTs = Date.now();
   renderInbox();
   save();
   iName.value = item.name;
@@ -2493,7 +2500,10 @@ function esc(s) {
 // ── Persist ──
 function save() {
   try {
-    const queueSnap = JSON.stringify([tasks, bigTasks, dailyDefs, shelvedTasks, heldTasks, inboxItems]);
+    // inboxItems deliberately excluded here — it has its own inboxTs now, bumped directly
+    // by the inbox functions, so an inbox-only change doesn't falsely bump tasksTs (which
+    // would make this device's whole task queue look "newer" than it really is to others).
+    const queueSnap = JSON.stringify([tasks, bigTasks, dailyDefs, shelvedTasks, heldTasks]);
     if (queueSnap !== _lastQueueSnap) { tasksTs = Date.now(); _lastQueueSnap = queueSnap; }
     localStorage.setItem('tt_tasksTs', tasksTs);
     // Stable keys — will never change prefix again
@@ -2529,6 +2539,7 @@ function save() {
     localStorage.setItem('tt_skipped',   JSON.stringify(skippedTasks));
     localStorage.setItem('tt_shelved',   JSON.stringify(shelvedTasks));
     localStorage.setItem('tt_inbox',     JSON.stringify(inboxItems));
+    localStorage.setItem('tt_inboxTs',   inboxTs);
     localStorage.setItem('tt_heldTasks',  JSON.stringify(heldTasks));
     localStorage.setItem('tt_locState',   locState);
     localStorage.setItem('tt_smallCount', smallCount);
@@ -2606,6 +2617,8 @@ function load() {
     if (sh) shelvedTasks = JSON.parse(sh);
     const ib = localStorage.getItem('tt_inbox');
     if (ib) inboxItems = JSON.parse(ib);
+    const ibts = localStorage.getItem('tt_inboxTs');
+    if (ibts) inboxTs = parseInt(ibts) || 0;
     const dh = localStorage.getItem('tt_dayHeld');
     if (dh) dayHeldTasks = JSON.parse(dh);
     const th = localStorage.getItem('tt_timeHeld');
@@ -2639,7 +2652,7 @@ function load() {
     if (ld) lastDay = ld;
   } catch(_) {}
   migrateAllTags();
-  _lastQueueSnap = JSON.stringify([tasks, bigTasks, dailyDefs, shelvedTasks, heldTasks, inboxItems]);
+  _lastQueueSnap = JSON.stringify([tasks, bigTasks, dailyDefs, shelvedTasks, heldTasks]);
 }
 
 // Migrate tasks saved before tags became multi-select (singular `tag` string -> `tags` array)
@@ -3000,7 +3013,7 @@ function getCloudPayload() {
     totalToday, totalTodayDate: todayStr(),
     completedToday, completedTodayDate: todayStr(),
     coins, coinsToday, coinsTodayDate: todayStr(), coinsTs,
-    skippedTasks, shelvedTasks, inboxItems, tasksTs,
+    skippedTasks, shelvedTasks, inboxItems, inboxTs, tasksTs,
     heldTasks, timeHeldTasks, locState, smallCount, spendDifficulty,
     left, total, curId: cur ? cur.id : -1,
     spendingCoins, spendTs: Date.now(),
@@ -3019,13 +3032,12 @@ function applyCloudPayload(raw) {
     // sync on a fresh device) — otherwise a stale tab/device pushing an old snapshot would
     // silently clobber a fresher local queue (e.g. resurrect tasks that were already
     // restored from 已搁置, or re-shelve tasks that are live in the current queue).
-    const localQueueEmpty = tasks.length === 0 && bigTasks.length === 0 && dailyDefs.length === 0 && shelvedTasks.length === 0 && inboxItems.length === 0;
+    const localQueueEmpty = tasks.length === 0 && bigTasks.length === 0 && dailyDefs.length === 0 && shelvedTasks.length === 0;
     if ((d.tasksTs || 0) > tasksTs || localQueueEmpty) {
       if (d.tasks        !== undefined) tasks        = d.tasks;
       if (d.bigTasks     !== undefined) bigTasks     = d.bigTasks;
       if (d.dailyDefs    !== undefined) dailyDefs    = d.dailyDefs;
       if (d.shelvedTasks !== undefined) shelvedTasks = d.shelvedTasks;
-      if (d.inboxItems   !== undefined) inboxItems   = d.inboxItems;
       if (d.heldTasks    !== undefined) {
         heldTasks = d.heldTasks;
       } else if (d.homeTasks !== undefined || d.workTasks !== undefined) {
@@ -3035,6 +3047,7 @@ function applyCloudPayload(raw) {
       if (d.timeHeldTasks !== undefined) timeHeldTasks = d.timeHeldTasks;
       tasksTs = Math.max(d.tasksTs || 0, tasksTs);
     }
+    mergeCloudInbox(d);
     if (d.done       !== undefined) done         = d.done;
     if (d.uid        !== undefined) uid          = d.uid;
     if (d.totalAllTime !== undefined) totalAllTime = d.totalAllTime;
@@ -3071,6 +3084,18 @@ function applyCloudPayload(raw) {
     if (tasks.length > 0) loadNext();
     else { renderAll(); updateStats(); }
   } catch(e) { console.error('Cloud apply failed', e); }
+}
+
+// inboxItems syncs on its own clock, independent of tasksTs — an inbox note added on one
+// device must not get silently dropped just because another device's task queue changed
+// more recently. Returns whether anything new was actually merged.
+function mergeCloudInbox(d) {
+  if ((d.inboxTs || 0) > inboxTs || (inboxItems.length === 0 && (d.inboxItems || []).length > 0)) {
+    if (d.inboxItems !== undefined) inboxItems = d.inboxItems;
+    inboxTs = Math.max(d.inboxTs || 0, inboxTs);
+    return true;
+  }
+  return false;
 }
 
 // Merges in whatever the cloud's coins changed by since we last looked, instead of picking
@@ -3204,6 +3229,9 @@ async function pushToCloud() {
           updateStats(); save();
         }
         applyCloudSteps(d);
+        // Merges straight into local inboxItems/inboxTs (not just a payload override like
+        // the tasksTs-gated fields below) so the push a few lines down carries it forward too.
+        mergeCloudInbox(d);
       }
     } catch (e) { /* fall through and push what we have */ }
   }
@@ -3213,7 +3241,7 @@ async function pushToCloud() {
   // The next poll pulls them in once nothing is running.
   const payload = JSON.parse(getCloudPayload());
   if (cloudQueue) {
-    for (const key of ['tasks', 'bigTasks', 'dailyDefs', 'shelvedTasks', 'inboxItems', 'heldTasks', 'timeHeldTasks', 'tasksTs']) {
+    for (const key of ['tasks', 'bigTasks', 'dailyDefs', 'shelvedTasks', 'heldTasks', 'timeHeldTasks', 'tasksTs']) {
       if (cloudQueue[key] !== undefined) payload[key] = cloudQueue[key];
     }
   }
@@ -3300,14 +3328,18 @@ async function pollCloud() {
       const coinsChanged = (d.coins !== undefined && d.coins !== coinsBase)
         || (d.coinsToday !== undefined && (d.coinsTodayDate || d.savedDate) === todayStr() && d.coinsToday !== coinsTodayBase);
       const spendNewer = (d.spendStateTs || 0) > spendStateTs;
+      // Merges immediately (idempotent — a no-op if already up to date); also tells us
+      // below whether a render/save is needed purely for the inbox, independent of tasksTs.
+      const inboxChanged = mergeCloudInbox(d);
       if (!running && ((d.tasksTs || 0) > tasksTs || coinsChanged || spendNewer)) {
         applyCloudPayload(dataRaw);
         updateStats(); save();
         setChip('ok', '☁ 已同步');
-      } else if (running && (coinsChanged || spendNewer)) {
-        // Coins and 消耗 don't touch the countdown, so these sync even mid-task.
+      } else if (coinsChanged || spendNewer || inboxChanged) {
+        // Coins, 消耗, and the inbox don't touch the countdown, so these sync even mid-task.
         applyCloudSpend(d, applyCloudCoins(d));
         applyCloudSteps(d);
+        if (inboxChanged) renderInbox();
         updateStats(); save();
         setChip('ok', '☁ 已同步');
       }

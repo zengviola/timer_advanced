@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v134</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v135</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -3175,9 +3175,16 @@ function applyCloudSpend(d, tookCoins) {
     }
     if (!spendingCoins || Date.now() < checkinDue()) hideCheckin();
   } else if (tookCoins && spendingCoins && d.spendingCoins && d.spendStartAt === spendStartAt) {
-    spendDeducted = d.spendDeducted || 0;
-    spendGross    = d.spendGross || 0;
-    spendEarned   = d.spendEarned || 0;
+    // Never let these regress backward — spendDeducted in particular is "how many minutes
+    // have already been charged," a fact that only ever grows while a session runs. Taking
+    // whichever device reports fewer (e.g. one that's lagged a tick or two behind) used to
+    // rewind it, so the next local spendTick() saw a bigger "due" than it should have and
+    // re-charged minutes that were already paid for — a runaway catch-up burst that got
+    // worse each round as the two devices kept rewinding each other. Math.max keeps whichever
+    // side is further along, same as the comment above always intended.
+    spendDeducted = Math.max(spendDeducted, d.spendDeducted || 0);
+    spendGross    = Math.max(spendGross, d.spendGross || 0);
+    spendEarned   = Math.max(spendEarned, d.spendEarned || 0);
   }
 }
 

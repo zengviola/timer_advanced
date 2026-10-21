@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v132</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v133</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -1564,7 +1564,15 @@ function checkTriggers() {
       // array for it) — just leave it dormant; it'll be reconsidered on the next trigger
       // or whenever the queue runs empty and loadNext() re-checks visibility itself.
       if (!tagsVisible(bt.tags, locState) || !timeSlotVisible(bt.timeSlot)) { bigTasks.push(bt); return; }
-      pushTop(bt);
+      // Appended to the back, not pushTop()'d to the front — an automatic count-based
+      // trigger just means this task has rejoined the rotation, not that it should cut
+      // ahead of whatever's already queued. With pushTop() here, several 大循环 tasks
+      // sharing a trigEvery (or completions repeatedly advancing smallCount, as both now
+      // do) would each jump straight after cur in turn, burying any 小循环 task already
+      // queued further and further back — exactly the "小循环不出现" symptom reported.
+      // triggerBigNow() (立即开始, an explicit manual override) still uses pushTop() on
+      // purpose — only this automatic path changes.
+      tasks.push(bt);
     });
     renderBig();
   }

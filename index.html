@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v133</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v134</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -599,6 +599,11 @@
     <div class="fg">
       <label class="fl">任务名称</label>
       <input type="text" id="iName" placeholder="例：阅读、运动、冥想…" maxlength="60" autocomplete="off">
+    </div>
+
+    <div class="fg">
+      <label class="fl">备注 <span style="color:var(--surf3);font-weight:400;text-transform:none">(可选)</span></label>
+      <input type="text" id="iDesc" placeholder="补充说明…" maxlength="200" autocomplete="off">
     </div>
 
     <div class="form-row">
@@ -1009,10 +1014,12 @@ function addTask() {
   const name = iName.value.trim();
   if (!name) { iName.focus(); flash(iName); return; }
   const mins = Math.max(1, parseInt(iDur.value) || 5);
+  const desc = document.getElementById('iDesc').value.trim();
 
   if (selType === 'big') {
     const nEl = document.getElementById('iTriN');
     const bt = { id: uid++, name, duration: mins * 60, type: 'big', count: 0, trigEvery: Math.max(1, parseInt(nEl?.value) || 20) };
+    if (desc) bt.description = desc;
     if (selDays.length > 0) bt.days = selDays.slice();
     bigTasks.push(bt);
     renderBig();
@@ -1020,6 +1027,7 @@ function addTask() {
   } else if (selType === 'daily') {
     // Create definition and immediately inject into today's queue
     const def = { id: uid++, name, duration: mins * 60, type: 'daily', count: 0, lastCompleted: null };
+    if (desc) def.description = desc;
     if (selDays.length > 0) def.days = selDays.slice();
     dailyDefs.push(def);
     injectDaily(def);   // add to active queue now
@@ -1027,6 +1035,7 @@ function addTask() {
 
   } else {
     const newTask = { id: uid++, name, duration: mins * 60, type: selType, count: 0 };
+    if (desc) newTask.description = desc;
     if (selTags.length > 0) newTask.tags = selTags.slice();
     if (selDays.length > 0) newTask.days = selDays.slice();
     if (selTimeSlot) newTask.timeSlot = selTimeSlot;
@@ -1045,6 +1054,7 @@ function addTask() {
   }
 
   iName.value = '';
+  document.getElementById('iDesc').value = '';
   iName.focus();
   if (selType === 'big') renderTrigForm();
   save();
@@ -1055,7 +1065,9 @@ function cutIn() {
   if (!name) { iName.focus(); flash(iName); return; }
   if (selType === 'daily') { addTask(); return; }
   const mins = Math.max(1, parseInt(iDur.value) || 5);
+  const desc = document.getElementById('iDesc').value.trim();
   const newTask = { id: uid++, name, duration: mins * 60, type: selType, count: 0 };
+  if (desc) newTask.description = desc;
   if (selTags.length > 0) newTask.tags = selTags.slice();
   // Big cycle cut-in: carry trigger info so it returns to dormant correctly after completion
   if (selType === 'big') {
@@ -1072,6 +1084,7 @@ function cutIn() {
   tasks.unshift(newTask); // put new task at position 0
   loadNext(true);         // start it immediately
   iName.value = '';
+  document.getElementById('iDesc').value = '';
   iName.focus();
   save();
 }
@@ -1168,6 +1181,7 @@ function makeDailyInstance(def) {
   const task = { id: uid++, name: def.name, duration: def.duration, type: 'daily', dailyId: def.id, count: def.count };
   if (def.tags) task.tags = def.tags.slice();
   if (def.timeSlot) task.timeSlot = def.timeSlot;
+  if (def.description) task.description = def.description;
   return task;
 }
 
@@ -2159,8 +2173,11 @@ function renderTimer() {
         return `<span class="${i === segIdx ? 'name-seg-hl' : 'name-seg'}">${esc(p)}${n > 0 ? `<sup class="seg-count">${n}</sup>` : ''}</span>`;
       }).join('<span class="name-sep">/</span>')
     : esc(cur.name);
+  const descHtml = cur.description
+    ? `<div class="cur-desc" style="font-size:0.85rem;color:var(--muted);text-align:center;margin-top:4px">${esc(cur.description)}</div>` : '';
   curInfo.innerHTML = `
     <div class="cur-name" style="cursor:pointer" onclick="openEditModal(${cur.id},'queue')" title="点击修改名称/类型/时长">${nameHtml}</div>
+    ${descHtml}
     <div class="cur-meta">
       <span class="badge b-${cur.type}" style="cursor:pointer" onclick="openEditModal(${cur.id},'queue')" title="点击修改">${tn(cur.type)}</span>
       ${tagPills(cur.tags)}
@@ -2300,6 +2317,7 @@ function renderQ() {
       <div style="min-width:20px;text-align:center;font-size:.75rem;color:var(--muted);font-weight:700">${i + 2}</div>
       <div class="card-body">
         <div class="card-name">${esc(t.name)}</div>
+        ${t.description ? `<div style="font-size:0.78rem;color:var(--muted)">${esc(t.description)}</div>` : ''}
         <div class="card-sub">
           <span>${mins} 分钟 <button class="edit-btn" onclick="openEditModal(${t.id},'queue')">✏</button></span>
           <span class="badge b-${t.type}" style="cursor:pointer" onclick="openEditModal(${t.id},'queue')" title="点击修改类型/时长">${tn(t.type)}</span>
@@ -2368,6 +2386,7 @@ function renderDaily() {
       <div class="daily-status-dot ${dotClass}"></div>
       <div class="card-body">
         <div class="card-name">${esc(def.name)}</div>
+        ${def.description ? `<div style="font-size:0.78rem;color:var(--muted)">${esc(def.description)}</div>` : ''}
         <div class="card-sub">
           <span>${mins} 分钟 <button class="edit-btn" onclick="openEditModal(${def.id},'daily')">✏</button></span>
           <span style="color:${isDone ? 'var(--small)' : inQueue ? 'var(--daily)' : 'var(--muted)'}">${statusTxt}</span>
@@ -2393,6 +2412,7 @@ function renderBig() {
       <span class="drag-handle" onpointerdown="startListDrag(event, bigTasks, ${bt.id}, renderBig)">⠿</span>
       <div class="card-body">
         <div class="card-name">${esc(bt.name)}</div>
+        ${bt.description ? `<div style="font-size:0.78rem;color:var(--muted)">${esc(bt.description)}</div>` : ''}
         <div class="card-sub">
           <span>${mins} 分钟 <button class="edit-btn" onclick="openEditModal(${bt.id},'big')">✏</button></span>
           <span class="badge b-big">大循环</span>
@@ -2802,6 +2822,7 @@ function openEditModal(id, src) {
   const nameInp = document.getElementById('modalName');
   nameInp.value = task.name;
   setModalNameSegs(task.name);
+  document.getElementById('modalDesc').value = task.description || '';
   const inp = document.getElementById('modalInput');
   inp.value = Math.ceil(task.duration / 60);
   // Show type selector for queue, done, and dormant big-cycle tasks
@@ -2826,6 +2847,8 @@ function saveModal() {
   if (task) {
     if (newName) task.name = newName;
     task.duration = secs;
+    const newDesc = document.getElementById('modalDesc').value.trim();
+    if (newDesc) task.description = newDesc; else delete task.description;
     // Save trigEvery for big cycle tasks
     if (task.type === 'big' || modalType === 'big') {
       const trigN = document.getElementById('modalTrigN');
@@ -2853,6 +2876,7 @@ function saveModal() {
         if (def) {
           if (task.tags) def.tags = task.tags.slice(); else delete def.tags;
           if (task.timeSlot) def.timeSlot = task.timeSlot; else delete def.timeSlot;
+          if (task.description) def.description = task.description; else delete def.description;
         }
       }
       // If the new tags/time no longer match right now, pull out of queue into the
@@ -3412,6 +3436,11 @@ initCloud();
       <label class="fl">任务名称</label>
       <input type="text" id="modalName" maxlength="60"
         oninput="setModalNameSegs(this.value)"
+        onkeydown="if(event.key==='Escape')closeModal()">
+    </div>
+    <div class="fg">
+      <label class="fl">备注 <span style="color:var(--surf3);font-weight:400;text-transform:none">(可选)</span></label>
+      <input type="text" id="modalDesc" maxlength="200" autocomplete="off"
         onkeydown="if(event.key==='Escape')closeModal()">
     </div>
     <div class="fg" id="modalSegRow" style="display:none">

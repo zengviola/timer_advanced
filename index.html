@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v135</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v136</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -1952,16 +1952,12 @@ function startCoinAlarm() {
 function confirmCoinAlarm() {
   clearInterval(alarmInterval); alarmInterval = null;
   document.getElementById('coinAlarmModal').style.display = 'none';
-  // If a spend session is what triggered this (vs. a one-off 改为消耗 conversion, which
-  // has no ongoing session to stop), acknowledging the alarm is what ends the overdraft.
-  if (spendingCoins) {
-    clearInterval(spendInterval); spendInterval = null;
-    spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
-    spendGross = 0; spendEarned = 0; spendStateTs = Date.now();
-    spendConfirmedAt = 0; spendGrossAtConfirm = 0; hideCheckin();
-    updateStats(); save();
-    if (cloudReady) pushToCloud();  // see toggleSpendCoins() — push spendingCoins=false immediately, don't wait on the debounce
-  }
+  // Just silences the alarm — no longer also stops an ongoing 消耗 session as a side
+  // effect. That used to mean dismissing a popup (e.g. one triggered by a runaway coin
+  // bug crashing the balance, not a real decision to stop) could silently end 消耗 and,
+  // downstream, get Steam closed by the guard script — surprising for something that
+  // looked like "just acknowledge this." Stopping 消耗 is now only ever the explicit
+  // 停止消耗 button.
 }
 
 // "改为消耗": the seconds already ticked on this task (countdown used + any

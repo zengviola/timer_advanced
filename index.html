@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v136</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v137</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -2073,6 +2073,7 @@ function autoStopSpend() {
 
 function spendTick() {
   if (!spendingCoins || !spendStartAt) return;
+  noteWake();  // may run before the 5 s wake check after a computer sleep
   // Just woke up: first learn whether another device already stopped this session or
   // charged these minutes — otherwise a sleeping device re-charges hours at once.
   if (!cloudFresh) return;
@@ -2991,6 +2992,18 @@ let cloudReady  = !localStorage.getItem('tt_cloud_token');
 // coinsTs and would overwrite the real balance, so 消耗 catch-up and step credits wait for it.
 let cloudFresh  = cloudReady;
 window.__markStale = () => { if (cloudToken) cloudFresh = false; };  // called by the iOS app on background
+// Computer sleep freezes timers without firing visibilitychange, so the page would wake up
+// acting on stale state. A tick that arrives far later than scheduled means we were asleep.
+let lastWakeCheck = Date.now();
+function noteWake() {
+  const now = Date.now();
+  if (now - lastWakeCheck > 30000 && cloudToken) {
+    cloudFresh = false;
+    if (cloudReady) pollCloud();
+  }
+  lastWakeCheck = now;
+}
+setInterval(noteWake, 5000);
 window.__resume    = () => { if (cloudReady) pollCloud(); };          // called by the iOS app on foreground
 
 const syncChip = document.getElementById('syncChip');

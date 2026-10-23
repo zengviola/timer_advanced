@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v137</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v138</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -719,6 +719,8 @@ let spendAlarmFired = false;  // the coin alarm has already fired for this spend
 let spendLastHeartbeat = 0;  // last time spendTick() force-pushed just to keep spendTs fresh (see spendTick)
 let spendConfirmedAt    = 0;  // last time someone answered 继续 to the night check-in (0 = not yet this session)
 let spendGrossAtConfirm = 0;  // spendGross at that moment; what's charged after it gets refunded if the next check-in goes unanswered
+let spendAliveAt  = 0;   // last moment some device was actively running this 消耗 session (synced); minutes after it + grace aren't charged
+const UNATTENDED_GRACE_MS = 3 * 60000;
 let spendStateTs  = 0;   // ms timestamp of the last local 消耗 start/stop; lets other devices adopt it without a stale pull undoing it
 const SPEND_OVERDRAFT_FLOOR = -120;  // keep deducting past 0 (2h worth at 1 coin/min) rather than stopping dead at 0
 // 19:00–20:30 (device local time) is free: 消耗 can start at any balance and charges nothing.
@@ -1890,7 +1892,7 @@ function toggleSpendCoins() {
     clearInterval(spendInterval); spendInterval = null;
     spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
     spendGross = 0; spendEarned = 0; spendStateTs = Date.now();
-    spendConfirmedAt = 0; spendGrossAtConfirm = 0; hideCheckin();
+    spendConfirmedAt = 0; spendGrossAtConfirm = 0; spendAliveAt = 0; hideCheckin();
     updateStats(); save();
     if (cloudReady) pushToCloud();  // bypass the debounce — an external tool (e.g. a Steam-blocking guard) may be gating on spendingCoins and needs this promptly, not after a 3s delay
     return;
@@ -1912,6 +1914,7 @@ function startSpendCoins() {
   spendLastHeartbeat = Date.now();
   spendStateTs    = Date.now();
   spendConfirmedAt = 0; spendGrossAtConfirm = 0;
+  spendAliveAt    = Date.now();
   updateStats(); save();
   if (cloudReady) pushToCloud();  // same as above — push the new spendingCoins=true state immediately
   spendInterval = setInterval(spendTick, 1000);
@@ -2063,7 +2066,7 @@ function autoStopSpend() {
   clearInterval(spendInterval); spendInterval = null;
   spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
   spendGross = 0; spendEarned = 0; spendStateTs = Date.now();
-  spendConfirmedAt = 0; spendGrossAtConfirm = 0;
+  spendConfirmedAt = 0; spendGrossAtConfirm = 0; spendAliveAt = 0;
   hideCheckin();
   document.getElementById('checkinStoppedRefund').textContent = refund;
   document.getElementById('checkinStoppedModal').style.display = 'flex';
@@ -2087,8 +2090,11 @@ function spendTick() {
     // Still floored, so an alarm ignored for hours doesn't run the balance away forever.
     const rate = SPEND_RATE[spendDifficulty] || 1;
     // Minute m covers [start + (m-1) min, start + m min); minutes starting in the free window cost nothing.
+    // Minutes after the last moment any device was running this session (+ grace) cost nothing
+    // either: with every device asleep nobody was using anything.
     for (let m = spendDeducted + 1; m <= elapsedMin && coins > SPEND_OVERDRAFT_FLOOR; m++) {
-      if (isFreeTime(spendStartAt + (m - 1) * 60000)) continue;
+      const minuteStart = spendStartAt + (m - 1) * 60000;
+      if (isFreeTime(minuteStart) || minuteStart >= spendAliveAt + UNATTENDED_GRACE_MS) continue;
       coins = Math.max(SPEND_OVERDRAFT_FLOOR, coins - rate);
       coinsToday = Math.max(0, coinsToday - rate);
       spendGross += rate;
@@ -2104,6 +2110,7 @@ function spendTick() {
     // own to blow through GitHub's 100/hour gist-write limit during a single long 消耗 session.
     spendLastHeartbeat = Date.now();
   }
+  spendAliveAt = Date.now();
   if (coins <= 0 && !spendAlarmFired) {
     spendAlarmFired = true;
     startCoinAlarm();
@@ -2559,6 +2566,7 @@ function save() {
     localStorage.setItem('tt_spendDeducted', spendDeducted);
     localStorage.setItem('tt_spendStateTs', spendStateTs);
     localStorage.setItem('tt_spendCheckin', JSON.stringify([spendConfirmedAt, spendGrossAtConfirm]));
+    localStorage.setItem('tt_spendAliveAt', spendAliveAt);
     localStorage.setItem('tt_spendDifficulty', spendDifficulty);
     localStorage.setItem('tt_steps', JSON.stringify({ stepsDate, stepsSeen, stepsCredited, stepsLog }));
     localStorage.setItem('tt_skipped',   JSON.stringify(skippedTasks));
@@ -2633,6 +2641,7 @@ function load() {
       spendGross      = spg !== null ? (parseInt(spg) || 0) : 0;
       spendEarned     = spe !== null ? (parseInt(spe) || 0) : 0;
       [spendConfirmedAt, spendGrossAtConfirm] = JSON.parse(localStorage.getItem('tt_spendCheckin') || '[0,0]');
+      spendAliveAt = parseInt(localStorage.getItem('tt_spendAliveAt')) || Date.now();  // pre-existing session: don't retroactively waive minutes
       if (spdd !== null) spendDeducted = parseInt(spdd) || 0;
       else spendDeducted = Math.floor((Date.now() - spendStartAt) / 60000);  // pre-fix save: assume minutes so far were already charged rather than charging them twice
     }
@@ -3058,11 +3067,17 @@ function getCloudPayload() {
     heldTasks, timeHeldTasks, locState, smallCount, spendDifficulty,
     left, total, curId: cur ? cur.id : -1,
     spendingCoins, spendTs: Date.now(),
-    spendStateTs, spendStartAt, spendDeducted, spendStartCoins, spendGross, spendEarned,
+    spendStateTs, spendStartAt, spendDeducted, spendStartCoins, spendGross, spendEarned, spendAliveAt,
     spendConfirmedAt, spendGrossAtConfirm,
     stepsDate, stepsSeen, stepsCredited, stepsLog,
     savedDate: todayStr()
   });
+}
+
+// Another device running the same session counts as it being attended.
+function noteCloudAlive(d) {
+  if (spendingCoins && d.spendingCoins && d.spendStartAt === spendStartAt)
+    spendAliveAt = Math.max(spendAliveAt, d.spendAliveAt || 0);
 }
 
 function applyCloudPayload(raw) {
@@ -3102,6 +3117,7 @@ function applyCloudPayload(raw) {
     // otherwise a stale gist (e.g. pulled right after a phone was backgrounded for
     // hours mid-spend) would clobber a correct local deduction.
     applyCloudSpend(d, applyCloudCoins(d));
+    noteCloudAlive(d);
     applyCloudSteps(d);
     if (d.skippedTasks !== undefined && (d.totalTodayDate || d.savedDate) === todayStr()) skippedTasks = d.skippedTasks;
     if (d.locState   !== undefined) locState     = d.locState;
@@ -3174,13 +3190,14 @@ function applyCloudSpend(d, tookCoins) {
       spendGross      = d.spendGross || 0;
       spendEarned     = d.spendEarned || 0;
       spendConfirmedAt    = d.spendConfirmedAt || 0;
+      spendAliveAt        = d.spendAliveAt || Date.now();
       spendGrossAtConfirm = d.spendGrossAtConfirm || 0;
       spendAlarmFired = false;
       spendInterval   = setInterval(spendTick, 1000);
     } else {
       spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
       spendGross = 0; spendEarned = 0;
-      spendConfirmedAt = 0; spendGrossAtConfirm = 0;
+      spendConfirmedAt = 0; spendGrossAtConfirm = 0; spendAliveAt = 0;
     }
     if (!spendingCoins || Date.now() < checkinDue()) hideCheckin();
   } else if (tookCoins && spendingCoins && d.spendingCoins && d.spendStartAt === spendStartAt) {
@@ -3267,6 +3284,7 @@ async function pushToCloud() {
       const raw = latest.ok ? (await latest.json()).files?.['timer_data.json']?.content : null;
       if (raw) {
         const d = JSON.parse(raw);
+        noteCloudAlive(d);
         if ((d.tasksTs || 0) > tasksTs) cloudQueue = d;
         // applyCloudCoins() merges deltas and is a no-op when nothing's actually new, so it's
         // safe (and necessary, to keep coinsBase current) to always call it here rather than
@@ -3373,6 +3391,7 @@ async function pollCloud() {
     const dataRaw = gist.files?.['timer_data.json']?.content;
     if (dataRaw) {
       const d = JSON.parse(dataRaw);
+      noteCloudAlive(d);
       const coinsChanged = (d.coins !== undefined && d.coins !== coinsBase)
         || (d.coinsToday !== undefined && (d.coinsTodayDate || d.savedDate) === todayStr() && d.coinsToday !== coinsTodayBase);
       const spendNewer = (d.spendStateTs || 0) > spendStateTs;

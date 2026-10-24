@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v138</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v139</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -1889,6 +1889,7 @@ function applyCloudSteps(d) {
 }
 function toggleSpendCoins() {
   if (spendingCoins) {
+    showSpendSummary();
     clearInterval(spendInterval); spendInterval = null;
     spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
     spendGross = 0; spendEarned = 0; spendStateTs = Date.now();
@@ -1898,6 +1899,21 @@ function toggleSpendCoins() {
     return;
   }
   startSpendCoins();
+}
+
+// Called right before the spend-session fields get reset, so it can show what actually
+// happened this session — how long, how much got taken, how much came back in from
+// completing tasks meanwhile, and the net coin change (against the true starting balance,
+// not just gross-minus-earned, so it also reflects any step-exchange credit mid-session).
+function showSpendSummary() {
+  document.getElementById('spendSumMins').textContent   = spendDeducted;
+  document.getElementById('spendSumGross').textContent  = spendGross;
+  document.getElementById('spendSumEarned').textContent = spendEarned;
+  document.getElementById('spendSumFrom').textContent   = spendStartCoins;
+  document.getElementById('spendSumTo').textContent     = coins;
+  const net = coins - spendStartCoins;
+  document.getElementById('spendSumNet').textContent = (net > 0 ? '+' : '') + net;
+  document.getElementById('spendSummaryModal').style.display = 'flex';
 }
 
 function startSpendCoins() {
@@ -3558,6 +3574,22 @@ initCloud();
     <div class="checkin-text">没有点「继续」，已退回 <b id="checkinStoppedRefund">0</b> 金币。</div>
     <div class="modal-btns">
       <button class="btn-confirm-checkin" onclick="document.getElementById('checkinStoppedModal').style.display='none'">知道了</button>
+    </div>
+  </div>
+</div>
+
+<div id="spendSummaryModal" class="modal-backdrop" style="display:none">
+  <div class="modal-box">
+    <div class="alarm-icon">🪙</div>
+    <div class="modal-title" style="text-align:center">本次消耗总结</div>
+    <div class="checkin-text" style="text-align:left">
+      时长：<b id="spendSumMins">0</b> 分钟<br>
+      扣除：<b id="spendSumGross">0</b> 金币<br>
+      期间赚回：<b id="spendSumEarned">0</b> 金币<br>
+      余额：<b id="spendSumFrom">0</b> → <b id="spendSumTo">0</b>（净 <b id="spendSumNet">0</b>）
+    </div>
+    <div class="modal-btns">
+      <button class="btn-confirm-checkin" onclick="document.getElementById('spendSummaryModal').style.display='none'">知道了</button>
     </div>
   </div>
 </div>

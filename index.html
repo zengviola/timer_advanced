@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v142</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v143</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -1071,7 +1071,7 @@ function cutIn() {
   if (selType === 'daily') { addTask(); return; }
   const mins = Math.max(1, parseInt(iDur.value) || 5);
   const desc = document.getElementById('iDesc').value.trim();
-  const newTask = { id: uid++, name, duration: mins * 60, type: selType, count: 0 };
+  const newTask = { id: uid++, name, duration: mins * 60, type: selType, count: 0, _mtime: Date.now() };
   if (desc) newTask.description = desc;
   if (selTags.length > 0) newTask.tags = selTags.slice();
   // Big cycle cut-in: carry trigger info so it returns to dormant correctly after completion
@@ -1085,6 +1085,7 @@ function cutIn() {
     clearInterval(ticker); running = false; btnSP.textContent = '开始';
     cur._left  = left;
     cur._total = total;
+    cur._mtime = Date.now();
   }
   tasks.unshift(newTask); // put new task at position 0
   loadNext(true);         // start it immediately
@@ -1244,6 +1245,7 @@ function flash(el) {
 
 // Insert after current (position 1), or at 0 if empty
 function pushTop(task) {
+  task._mtime = Date.now();  // see mergeTaskQueue() — lets a per-task cloud merge pick the newer side
   if (tasks.length === 0) tasks.push(task);
   else tasks.splice(1, 0, task);
 }
@@ -1272,7 +1274,7 @@ function loadNext(autoStart = false) {
       taskActiveToday(bt) && tagsVisible(bt.tags, locState) && timeSlotVisible(bt.timeSlot));
     if (revivable.length > 0) {
       bigTasks = bigTasks.filter(bt => !revivable.includes(bt));
-      revivable.forEach(bt => tasks.push(bt));
+      revivable.forEach(bt => { bt._mtime = Date.now(); tasks.push(bt); });  // see mergeTaskQueue()
       renderBig();
     }
   }
@@ -1282,6 +1284,7 @@ function loadNext(autoStart = false) {
       // Interrupted by cut-in: restore the saved remaining time
       left = cur._left; total = cur._total || cur.duration;
       delete cur._left; delete cur._total;
+      cur._mtime = Date.now();
     } else if (_savedCurId !== null && cur.id === _savedCurId && _savedLeft !== null) {
       // Restore from page reload
       left  = _savedLeft;
@@ -1522,6 +1525,7 @@ function doComplete() {
     if (t.dayCountDate !== _td) { t.dayCount = 0; t.dayCountDate = _td; t.segCounts = {}; }
     t.dayCount = (t.dayCount || 0) + 1;
     recordSegCompletion(t);
+    t._mtime = Date.now();  // see mergeTaskQueue() — this count bump must win a cloud merge
     if (!taskActiveToday(t)) dayHeldTasks.push(t);
     else if (!tagsVisible(t.tags, locState)) heldTasks.push(t);
     else if (!timeSlotVisible(t.timeSlot)) timeHeldTasks.push(t);
@@ -1591,6 +1595,7 @@ function checkTriggers() {
       // queued further and further back — exactly the "小循环不出现" symptom reported.
       // triggerBigNow() (立即开始, an explicit manual override) still uses pushTop() on
       // purpose — only this automatic path changes.
+      bt._mtime = Date.now();  // see mergeTaskQueue() — bypasses pushTop(), so stamp directly
       tasks.push(bt);
     });
     renderBig();
@@ -1699,20 +1704,22 @@ function restoreSkipped(taskId) {
 }
 
 function restoreAll() {
+  const now = Date.now();  // see mergeTaskQueue() — these moves bypass pushTop(), so stamp directly
   // Restore all skipped tasks
   [...skippedTasks].forEach(({ task }) => {
     if (task.type === 'daily') {
       const def = dailyDefs.find(d => d.id === task.dailyId);
       if (def) def.skippedToday = null;
     }
+    task._mtime = now;
     tasks.push(task);
   });
   skippedTasks = [];
   // Restore all day-held tasks regardless of day restriction
-  dayHeldTasks.forEach(t => tasks.push(t));
+  dayHeldTasks.forEach(t => { t._mtime = now; tasks.push(t); });
   dayHeldTasks = [];
   // Restore all shelved tasks
-  shelvedTasks.forEach(t => tasks.push(t));
+  shelvedTasks.forEach(t => { t._mtime = now; tasks.push(t); });
   shelvedTasks = [];
   if (!cur) loadNext();
   else renderQ();
@@ -2903,6 +2910,10 @@ function saveModal() {
   const task = findTask(editingId, editingSrc);
 
   if (task) {
+    // Relevant when editingSrc === 'queue': task is the live object inside `tasks`, and
+    // mergeTaskQueue() uses this to make sure this edit survives a cloud merge instead of
+    // getting silently reverted by a concurrent, unrelated push from another device.
+    task._mtime = Date.now();
     if (newName) task.name = newName;
     task.duration = secs;
     const newDesc = document.getElementById('modalDesc').value.trim();
@@ -3132,6 +3143,41 @@ function noteCloudAlive(d) {
     spendAliveAt = Math.max(spendAliveAt, d.spendAliveAt || 0);
 }
 
+// Per-task merge for the main `tasks` queue specifically — NOT the other 5 queue-ish
+// arrays below (bigTasks/dailyDefs/shelvedTasks/heldTasks/timeHeldTasks), which still
+// accept-or-reject the whole remote snapshot wholesale based on tasksTs, same as always.
+// Those are edited far less often, so that coarser (and much simpler) rule is an
+// acceptable tradeoff there; `tasks` is edited constantly (every completion bumps a
+// count), so the coarse rule was actively losing data: if device A completes task X
+// (bumping tasksTs) right as device B edits unrelated task Y (bumping tasksTs again,
+// slightly later), B's push would overwrite A's entire queue snapshot wholesale —
+// silently reverting A's completion/count change even though B never touched task X.
+//
+// Fix: merge by task id. A task id present on both sides keeps whichever copy has the
+// newer per-task `_mtime` stamp (see pushTop() and the mutation sites that bump it
+// directly) — this is the actual fix for that class of bug. A task id present on only
+// one side falls back to `remoteNewer` (the same overall "which snapshot is fresher"
+// signal the other 5 arrays use) to decide whether to keep it: trust whichever side is
+// the fresher overall snapshot for *presence*, since there's no per-task signal to
+// resolve that question (a task with no counterpart on the other side wasn't edited
+// there — it was either added there recently, or removed here recently, and apart from
+// the overall timestamp there is no way to tell which from the data alone).
+//
+// Known limitation: if a task is fully consumed on one side (completed, moved to `done`,
+// or similarly removed from `tasks` for good) while the *other* side's snapshot predates
+// that and is also the one judged "newer" overall (e.g. due to an unrelated, later local
+// edit elsewhere bumping its tasksTs past the removal's), that stale copy can still win
+// presence and reappear. Fixing that fully would need per-task deletion tombstones, not
+// just last-write-wins timestamps — out of scope for now; flag it if it comes up.
+function mergeTaskQueue(localList, remoteList, remoteNewer) {
+  const baseList = remoteNewer ? remoteList : localList;
+  const otherMap  = new Map((remoteNewer ? localList : remoteList).map(t => [t.id, t]));
+  return baseList.map(baseTask => {
+    const other = otherMap.get(baseTask.id);
+    return other && (other._mtime || 0) > (baseTask._mtime || 0) ? other : baseTask;
+  });
+}
+
 function applyCloudPayload(raw) {
   try {
     const d = JSON.parse(raw);
@@ -3141,8 +3187,10 @@ function applyCloudPayload(raw) {
     // silently clobber a fresher local queue (e.g. resurrect tasks that were already
     // restored from 已搁置, or re-shelve tasks that are live in the current queue).
     const localQueueEmpty = tasks.length === 0 && bigTasks.length === 0 && dailyDefs.length === 0 && shelvedTasks.length === 0;
-    if ((d.tasksTs || 0) > tasksTs || localQueueEmpty) {
-      if (d.tasks        !== undefined) tasks        = d.tasks;
+    const remoteNewer = (d.tasksTs || 0) > tasksTs;
+    // `tasks` merges per-task id regardless of remoteNewer — see mergeTaskQueue().
+    if (d.tasks !== undefined) tasks = mergeTaskQueue(tasks, d.tasks, remoteNewer || localQueueEmpty);
+    if (remoteNewer || localQueueEmpty) {
       if (d.bigTasks     !== undefined) bigTasks     = d.bigTasks;
       if (d.dailyDefs    !== undefined) dailyDefs    = d.dailyDefs;
       if (d.shelvedTasks !== undefined) shelvedTasks = d.shelvedTasks;
@@ -3153,11 +3201,14 @@ function applyCloudPayload(raw) {
         heldTasks = [...(d.homeTasks || []), ...(d.workTasks || [])];
       }
       if (d.timeHeldTasks !== undefined) timeHeldTasks = d.timeHeldTasks;
-      tasksTs = Math.max(d.tasksTs || 0, tasksTs);
     }
+    tasksTs = Math.max(d.tasksTs || 0, tasksTs);
     mergeCloudInbox(d);
     if (d.done       !== undefined) done         = d.done;
-    if (d.uid        !== undefined) uid          = d.uid;
+    // Math.max, not overwrite: a stale pull setting uid backward would let this device
+    // later hand out an id another device already used, corrupting any id-keyed merge
+    // (e.g. mergeTaskQueue() below).
+    if (d.uid        !== undefined) uid          = Math.max(uid, d.uid);
     if (d.totalAllTime !== undefined) totalAllTime = d.totalAllTime;
     if (d.totalToday !== undefined && (d.totalTodayDate || d.savedDate) === todayStr()) {
       totalToday = d.totalToday > 86400 ? 0 : d.totalToday;
@@ -3369,7 +3420,12 @@ async function pushToCloud() {
   // The next poll pulls them in once nothing is running.
   const payload = JSON.parse(getCloudPayload());
   if (cloudQueue) {
-    for (const key of ['tasks', 'bigTasks', 'dailyDefs', 'shelvedTasks', 'heldTasks', 'timeHeldTasks', 'tasksTs']) {
+    // `tasks` merges per-task id instead of taking the cloud's copy wholesale — otherwise
+    // this device's own just-made edit (e.g. a completion count bump) would get silently
+    // discarded here just because the cloud's tasksTs happens to be newer overall (bumped
+    // by a completely unrelated edit on the other device). See mergeTaskQueue().
+    if (cloudQueue.tasks !== undefined) payload.tasks = mergeTaskQueue(payload.tasks, cloudQueue.tasks, true);
+    for (const key of ['bigTasks', 'dailyDefs', 'shelvedTasks', 'heldTasks', 'timeHeldTasks', 'tasksTs']) {
       if (cloudQueue[key] !== undefined) payload[key] = cloudQueue[key];
     }
   }

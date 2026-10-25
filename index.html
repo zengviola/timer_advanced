@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v140</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v141</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -716,6 +716,10 @@ let spendStartCoins = 0;  // coins balance at the moment the current spend sessi
 let spendGross    = 0;   // coins actually taken by the spend timer itself this session (ignores earnings)
 let spendEarned   = 0;   // coins earned by completing tasks while this spend session is active
 let spendAlarmFired = false;  // the coin alarm has already fired for this spend session (don't repeat it every tick)
+let spendDepletedAt = 0;      // ms timestamp coins first hit <=0 this session; 0 = not currently in overdraft
+let spendWarnIdx    = 0;      // how many of SPEND_DEPLETION_WARN_MINS have already re-fired since spendDepletedAt
+const SPEND_DEPLETION_WARN_MINS = [5, 10, 27];  // minutes into overdraft to re-sound the alarm
+const SPEND_DEPLETION_STOP_MIN  = 30;           // minutes into overdraft to auto-stop 消耗 instead of running unattended for hours
 let spendLastHeartbeat = 0;  // last time spendTick() force-pushed just to keep spendTs fresh (see spendTick)
 let spendConfirmedAt    = 0;  // last time someone answered 继续 to the night check-in (0 = not yet this session)
 let spendGrossAtConfirm = 0;  // spendGross at that moment; what's charged after it gets refunded if the next check-in goes unanswered
@@ -1894,6 +1898,7 @@ function toggleSpendCoins() {
     spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
     spendGross = 0; spendEarned = 0; spendStateTs = Date.now();
     spendConfirmedAt = 0; spendGrossAtConfirm = 0; spendAliveAt = 0; hideCheckin();
+    spendDepletedAt = 0; spendWarnIdx = 0;
     updateStats(); save();
     if (cloudReady) pushToCloud();  // bypass the debounce — an external tool (e.g. a Steam-blocking guard) may be gating on spendingCoins and needs this promptly, not after a 3s delay
     return;
@@ -1927,6 +1932,7 @@ function startSpendCoins() {
   spendGross      = 0;
   spendEarned     = 0;
   spendAlarmFired = false;
+  spendDepletedAt = 0; spendWarnIdx = 0;
   spendLastHeartbeat = Date.now();
   spendStateTs    = Date.now();
   spendConfirmedAt = 0; spendGrossAtConfirm = 0;
@@ -2083,6 +2089,7 @@ function autoStopSpend() {
   spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
   spendGross = 0; spendEarned = 0; spendStateTs = Date.now();
   spendConfirmedAt = 0; spendGrossAtConfirm = 0; spendAliveAt = 0;
+  spendDepletedAt = 0; spendWarnIdx = 0;
   hideCheckin();
   document.getElementById('checkinStoppedRefund').textContent = refund;
   document.getElementById('checkinStoppedModal').style.display = 'flex';
@@ -2127,9 +2134,34 @@ function spendTick() {
     spendLastHeartbeat = Date.now();
   }
   spendAliveAt = Date.now();
-  if (coins <= 0 && !spendAlarmFired) {
-    spendAlarmFired = true;
-    startCoinAlarm();
+  if (coins <= 0) {
+    if (!spendAlarmFired) {
+      spendAlarmFired = true;
+      // Only set these if this is a genuinely new depletion — applyCloudSpend() resets
+      // spendAlarmFired to false when adopting an already-overdraft session from another
+      // device (so this device still sounds its own local alarm), but spendDepletedAt
+      // there is already the real, earlier start time and must not be clobbered.
+      if (!spendDepletedAt) { spendDepletedAt = Date.now(); spendWarnIdx = 0; }
+      startCoinAlarm();
+    }
+    // Re-sound the alarm a few times as the overdraft drags on, then stop it outright —
+    // a single alarm fired once was easy to dismiss and forget, leaving 消耗 running
+    // unattended for hours (observed: 4h46m) instead of ending the session.
+    const overdraftMin = Math.floor((Date.now() - spendDepletedAt) / 60000);
+    if (overdraftMin >= SPEND_DEPLETION_STOP_MIN) {
+      confirmCoinAlarm();  // silence any still-sounding alarm before the stop summary takes over
+      toggleSpendCoins();  // same effect as clicking 停止扣金币
+      return;
+    }
+    if (spendWarnIdx < SPEND_DEPLETION_WARN_MINS.length && overdraftMin >= SPEND_DEPLETION_WARN_MINS[spendWarnIdx]) {
+      spendWarnIdx++;
+      startCoinAlarm();
+    }
+  } else if (spendDepletedAt) {
+    // Coins recovered above 0 (e.g. a task was completed mid-session) — clear the overdraft
+    // clock so a later depletion gets its own fresh 5/10/27-minute warnings.
+    spendDepletedAt = 0;
+    spendWarnIdx = 0;
   }
   if (checkSpendCheckin()) return;  // session just auto-stopped
   // Coin deduction only saves once per elapsed minute, which would otherwise leave spendTs
@@ -2583,6 +2615,8 @@ function save() {
     localStorage.setItem('tt_spendStateTs', spendStateTs);
     localStorage.setItem('tt_spendCheckin', JSON.stringify([spendConfirmedAt, spendGrossAtConfirm]));
     localStorage.setItem('tt_spendAliveAt', spendAliveAt);
+    localStorage.setItem('tt_spendDepletedAt', spendDepletedAt);
+    localStorage.setItem('tt_spendWarnIdx', spendWarnIdx);
     localStorage.setItem('tt_spendDifficulty', spendDifficulty);
     localStorage.setItem('tt_steps', JSON.stringify({ stepsDate, stepsSeen, stepsCredited, stepsLog }));
     localStorage.setItem('tt_skipped',   JSON.stringify(skippedTasks));
@@ -2660,6 +2694,9 @@ function load() {
       spendAliveAt = parseInt(localStorage.getItem('tt_spendAliveAt')) || Date.now();  // pre-existing session: don't retroactively waive minutes
       if (spdd !== null) spendDeducted = parseInt(spdd) || 0;
       else spendDeducted = Math.floor((Date.now() - spendStartAt) / 60000);  // pre-fix save: assume minutes so far were already charged rather than charging them twice
+      spendDepletedAt = parseInt(localStorage.getItem('tt_spendDepletedAt')) || 0;
+      spendWarnIdx    = parseInt(localStorage.getItem('tt_spendWarnIdx')) || 0;
+      spendAlarmFired = spendDepletedAt > 0;  // don't re-sound the initial alarm after a reload if we were already in overdraft
     }
     const sk = pick('tt_skipped',  'tt5_skipped');
     if (sk && tdd === todayStr()) skippedTasks = JSON.parse(sk);
@@ -3084,7 +3121,7 @@ function getCloudPayload() {
     left, total, curId: cur ? cur.id : -1,
     spendingCoins, spendTs: Date.now(),
     spendStateTs, spendStartAt, spendDeducted, spendStartCoins, spendGross, spendEarned, spendAliveAt,
-    spendConfirmedAt, spendGrossAtConfirm,
+    spendConfirmedAt, spendGrossAtConfirm, spendDepletedAt, spendWarnIdx,
     stepsDate, stepsSeen, stepsCredited, stepsLog,
     savedDate: todayStr()
   });
@@ -3209,11 +3246,14 @@ function applyCloudSpend(d, tookCoins) {
       spendAliveAt        = d.spendAliveAt || Date.now();
       spendGrossAtConfirm = d.spendGrossAtConfirm || 0;
       spendAlarmFired = false;
+      spendDepletedAt = d.spendDepletedAt || 0;
+      spendWarnIdx    = d.spendWarnIdx || 0;
       spendInterval   = setInterval(spendTick, 1000);
     } else {
       spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
       spendGross = 0; spendEarned = 0;
       spendConfirmedAt = 0; spendGrossAtConfirm = 0; spendAliveAt = 0;
+      spendDepletedAt = 0; spendWarnIdx = 0;
     }
     if (!spendingCoins || Date.now() < checkinDue()) hideCheckin();
   } else if (tookCoins && spendingCoins && d.spendingCoins && d.spendStartAt === spendStartAt) {
@@ -3227,6 +3267,13 @@ function applyCloudSpend(d, tookCoins) {
     spendDeducted = Math.max(spendDeducted, d.spendDeducted || 0);
     spendGross    = Math.max(spendGross, d.spendGross || 0);
     spendEarned   = Math.max(spendEarned, d.spendEarned || 0);
+    // Depletion clock: keep whichever started earlier (the more conservative, correct
+    // answer for "how long have we been in overdraft"), and never let the warn count
+    // regress — same reasoning as spendDeducted above.
+    spendDepletedAt = spendDepletedAt && d.spendDepletedAt
+      ? Math.min(spendDepletedAt, d.spendDepletedAt)
+      : (spendDepletedAt || d.spendDepletedAt || 0);
+    spendWarnIdx = Math.max(spendWarnIdx, d.spendWarnIdx || 0);
   }
 }
 

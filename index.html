@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v141</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v142</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -726,7 +726,6 @@ let spendGrossAtConfirm = 0;  // spendGross at that moment; what's charged after
 let spendAliveAt  = 0;   // last moment some device was actively running this 消耗 session (synced); minutes after it + grace aren't charged
 const UNATTENDED_GRACE_MS = 3 * 60000;
 let spendStateTs  = 0;   // ms timestamp of the last local 消耗 start/stop; lets other devices adopt it without a stale pull undoing it
-const SPEND_OVERDRAFT_FLOOR = -120;  // keep deducting past 0 (2h worth at 1 coin/min) rather than stopping dead at 0
 // 19:00–20:30 (device local time) is free: 消耗 can start at any balance and charges nothing.
 // On Fri/Sat nights the window runs from 19:00 all the way to midnight instead.
 const FREE_WINDOW = [19 * 60, 20 * 60 + 30];
@@ -2108,17 +2107,17 @@ function spendTick() {
   const elapsedMin = Math.floor((Date.now() - spendStartAt) / 60000);
   const due = elapsedMin - spendDeducted;
   if (due > 0) {
-    // Keep deducting past 0 instead of stopping dead — the alarm (fired once, below) is
-    // what's supposed to get the user's attention, not a hard stop they might not see.
-    // Still floored, so an alarm ignored for hours doesn't run the balance away forever.
+    // Keep deducting past 0 instead of stopping dead — the escalating overdraft alarm
+    // (below) is what's supposed to end the session (auto-stop at SPEND_DEPLETION_STOP_MIN
+    // minutes past depletion), not a deduction floor. No separate floor needed here anymore.
     const rate = SPEND_RATE[spendDifficulty] || 1;
     // Minute m covers [start + (m-1) min, start + m min); minutes starting in the free window cost nothing.
     // Minutes after the last moment any device was running this session (+ grace) cost nothing
     // either: with every device asleep nobody was using anything.
-    for (let m = spendDeducted + 1; m <= elapsedMin && coins > SPEND_OVERDRAFT_FLOOR; m++) {
+    for (let m = spendDeducted + 1; m <= elapsedMin; m++) {
       const minuteStart = spendStartAt + (m - 1) * 60000;
       if (isFreeTime(minuteStart) || minuteStart >= spendAliveAt + UNATTENDED_GRACE_MS) continue;
-      coins = Math.max(SPEND_OVERDRAFT_FLOOR, coins - rate);
+      coins -= rate;
       coinsToday = Math.max(0, coinsToday - rate);
       spendGross += rate;
     }

@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v144</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v145</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -1368,7 +1368,10 @@ function dailyRollover() {
   completedToday = 0;
   todayAtResume = 0;  // reset so running tick doesn't restore old value
   if (running) recordStart();  // rebase timerStartedAt so a running task doesn't recompute elapsed from before the reset
-  smallCount = 0;  // small-cycle count toward next big-cycle trigger resets daily
+  // smallCount is NOT reset here — it's a cumulative trigger counter (every N small-cycle
+  // completions fires a 大循环), not a daily stat. Resetting it at midnight used to throw
+  // away any progress short of a full trigEvery, making a 大循环 take longer to appear than
+  // the completions actually invested in it should warrant.
   // Restore all skipped cycle tasks back to queue at midnight
   skippedTasks.forEach(({ task: t }) => {
     if (t.type !== 'daily') pushTop(t); // daily tasks re-injected via checkDailyTasks
@@ -3127,7 +3130,7 @@ function getCloudPayload() {
     completedToday, completedTodayDate: todayStr(),
     coins, coinsToday, coinsTodayDate: todayStr(), coinsTs,
     skippedTasks, shelvedTasks, inboxItems, inboxTs, tasksTs,
-    heldTasks, timeHeldTasks, locState, smallCount, smallCountDate: todayStr(), spendDifficulty,
+    heldTasks, timeHeldTasks, locState, smallCount, spendDifficulty,
     left, total, curId: cur ? cur.id : -1,
     spendingCoins, spendTs: Date.now(),
     spendStateTs, spendStartAt, spendDeducted, spendStartCoins, spendGross, spendEarned, spendAliveAt,
@@ -3225,13 +3228,11 @@ function applyCloudPayload(raw) {
     if (d.skippedTasks !== undefined && (d.totalTodayDate || d.savedDate) === todayStr()) skippedTasks = d.skippedTasks;
     if (d.locState   !== undefined) locState     = d.locState;
     else if (d.workMode !== undefined) locState  = d.workMode ? 'work' : 'home_before';
-    // Date-gated like completedToday/totalToday/coinsToday above, plus Math.max against
-    // regressing within the same day: smallCount drives the 大循环 trigger threshold
-    // (smallCount % every === 0), so a stale pull rewinding it silently stalls every big
-    // cycle until smallCount happens to climb back past the same multiple again.
-    if (d.smallCount !== undefined && (d.smallCountDate || d.savedDate) === todayStr()) {
-      smallCount = Math.max(smallCount, d.smallCount);
-    }
+    // smallCount is cumulative now (never resets — see dailyRollover()), so no date gate
+    // is needed: Math.max alone is correct, same reasoning as uid above. Drives the 大循环
+    // trigger threshold (smallCount % every === 0); a stale pull rewinding it would stall
+    // every big cycle until smallCount climbed back past the same multiple again.
+    if (d.smallCount !== undefined) smallCount = Math.max(smallCount, d.smallCount);
     if (d.spendDifficulty !== undefined && SPEND_RATE[d.spendDifficulty]) {
       spendDifficulty = d.spendDifficulty;
       renderSpendDifficultyToggle();

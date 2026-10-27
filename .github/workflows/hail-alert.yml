@@ -1,0 +1,34 @@
+name: hail-alert
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "Send a test push to Bark"
+        type: boolean
+        default: false
+
+concurrency: hail-alert
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        with:
+          path: hail-alert/state.json
+          key: hail-state-${{ github.run_id }}
+          restore-keys: hail-state-
+      - name: Check BoM
+        env:
+          BARK_KEY: ${{ secrets.BARK_KEY }}
+        run: python3 hail-alert/hail_alert.py ${{ inputs.test && '--test' || '' }}
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: hail-alert/state.json
+          key: hail-state-${{ github.run_id }}

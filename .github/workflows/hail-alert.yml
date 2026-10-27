@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       test:
-        description: "Send a test push to Bark"
+        description: "Send a test push"
         type: boolean
         default: false
 
@@ -25,7 +25,7 @@ jobs:
           restore-keys: hail-state-
       - name: Check BoM
         env:
-          BARK_KEY: ${{ secrets.BARK_KEY }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: python3 hail-alert/hail_alert.py ${{ inputs.test && '--test' || '' }}
       - uses: actions/cache/save@v4
         if: always()

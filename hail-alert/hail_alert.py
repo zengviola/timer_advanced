@@ -1,10 +1,10 @@
-"""Hail alerts for Kangaroo Point (Brisbane) and Bundall (Gold Coast) via ntfy.
+"""Hail alerts for Kangaroo Point (Brisbane) and Bundall (Gold Coast) via Bark.
 
 Data: Bureau of Meteorology public feeds.
   - QLD warnings RSS: severe thunderstorm warnings that mention hail
   - QLD precis forecast: a once-a-day heads-up when storms are forecast
 
-Env: NTFY_TOPIC (no topic -> dry run, prints instead of pushing). State in state.json.
+Env: BARK_KEY (no key -> dry run, prints instead of pushing). State in state.json.
 """
 import json
 import os
@@ -42,20 +42,24 @@ def page_text(html):
 
 
 def push(title, body, url=None, critical=False):
-    topic = os.environ.get("NTFY_TOPIC", "").strip()
-    if not topic:
+    key = os.environ.get("BARK_KEY", "").strip()
+    if not key:
         print(f"[dry run] {title} | {body} | {url or ''}")
         return
-    payload = {"topic": topic, "title": title, "message": body, "priority": 5 if critical else 4}
+    payload = {"device_key": key, "title": title, "body": body, "group": "冰雹提醒"}
     if url:
-        payload["click"] = url
+        payload["url"] = url
+    if critical:
+        payload.update(level="critical", volume=8, sound="alarm")
+    else:
+        payload["level"] = "timeSensitive"
     req = urllib.request.Request(
-        "https://ntfy.sh/",
+        "https://api.day.app/push",
         data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json; charset=utf-8"},
     )
     with urllib.request.urlopen(req, timeout=30) as r:
-        print("ntfy:", r.read().decode())
+        print("Bark:", r.read().decode())
 
 
 def check_warnings(state):
@@ -121,6 +125,6 @@ def main():
 
 if __name__ == "__main__":
     if "--test" in sys.argv:
-        push("✅ 冰雹提醒测试", "收到这条说明 ntfy 连通了。", critical=True)
+        push("✅ 冰雹提醒测试", "收到这条说明 Bark 连通了。", critical=True)
     else:
         main()

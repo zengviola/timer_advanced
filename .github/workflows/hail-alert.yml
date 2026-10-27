@@ -3,6 +3,8 @@ name: hail-alert
 on:
   schedule:
     - cron: "*/10 * * * *"
+  push:
+    paths: [hail-alert/test-ping.txt]
   workflow_dispatch:
     inputs:
       test:
@@ -26,7 +28,7 @@ jobs:
       - name: Check BoM
         env:
           BARK_KEY: ${{ secrets.BARK_KEY }}
-        run: python3 hail-alert/hail_alert.py ${{ inputs.test && '--test' || '' }}
+        run: python3 hail-alert/hail_alert.py ${{ (inputs.test || github.event_name == 'push') && '--test' || '' }}
       - uses: actions/cache/save@v4
         if: always()
         with:

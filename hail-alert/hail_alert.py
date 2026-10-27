@@ -10,6 +10,7 @@ import json
 import os
 import re
 import sys
+import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
@@ -43,6 +44,10 @@ def page_text(html):
 
 def push(title, body, url=None, critical=False):
     key = os.environ.get("BARK_KEY", "").strip()
+    # Accept the whole "https://api.day.app/<key>/..." URL Bark shows, not just the key.
+    m = re.search(r"day\.app/([^/\s]+)", key)
+    if m:
+        key = m.group(1)
     if not key:
         print(f"[dry run] {title} | {body} | {url or ''}")
         return
@@ -58,8 +63,11 @@ def push(title, body, url=None, critical=False):
         data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json; charset=utf-8"},
     )
-    with urllib.request.urlopen(req, timeout=30) as r:
-        print("Bark:", r.read().decode())
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            print("Bark:", r.read().decode())
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"Bark HTTP {e.code}: {e.read().decode(errors='replace')[:300]}") from None
 
 
 def check_warnings(state):
@@ -116,7 +124,8 @@ def main():
         try:
             check(state)
         except Exception as e:  # one feed down shouldn't block the other
-            print(f"{check.__name__} failed: {e}", file=sys.stderr)
+            # ::error:: shows up as a run annotation, readable without opening the log.
+            print(f"::error::{check.__name__} failed: {e!r}")
             failed = True
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=1)
@@ -125,6 +134,10 @@ def main():
 
 if __name__ == "__main__":
     if "--test" in sys.argv:
-        push("✅ 冰雹提醒测试", "收到这条说明 Bark 连通了。", critical=True)
+        try:
+            push("✅ 冰雹提醒测试", "收到这条说明 Bark 连通了。", critical=True)
+        except Exception as e:
+            print(f"::error::test push failed: {e!r}")
+            sys.exit(1)
     else:
         main()

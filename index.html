@@ -269,10 +269,24 @@
       padding: 24px; width: 280px; display: flex; flex-direction: column; gap: 16px;
       box-shadow: 0 20px 60px rgba(0,0,0,.5);
       animation: slideIn .2s ease;
+      /* The edit modal in particular has grown to 9+ field groups — tall enough on a short
+         viewport (phones) to push 保存/取消 below the fold with no way to reach them, since
+         this box previously had no size limit or scroll of its own. max-height + scroll
+         fixes that for every modal that shares this class; short ones are unaffected since
+         they never hit the limit. */
+      max-height: 90vh; overflow-y: auto;
     }
     .modal-title { font-size: 1rem; font-weight: 700; }
     .modal-task-name { font-size: 0.82rem; color: var(--muted); }
-    .modal-btns { display: flex; gap: 10px; }
+    .modal-btns {
+      display: flex; gap: 10px;
+      /* Sticks to the bottom of the scrolling .modal-box instead of scrolling away with the
+         fields above it, so it's always reachable without hunting for it mid-scroll. */
+      position: sticky; bottom: -24px;
+      margin: 0 -24px -24px; padding: 12px 24px 24px;
+      background: var(--surf);
+      border-top: 1px solid var(--surf2);
+    }
     .modal-btns button {
       flex: 1; border: none; border-radius: 8px; padding: 10px;
       font-size: 0.88rem; font-weight: 700; cursor: pointer; font-family: inherit;
@@ -408,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v156</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v157</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>

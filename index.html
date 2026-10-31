@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v146</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v147</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -1351,7 +1351,12 @@ function tick() {
     left         = newLeft;
     totalAllTime = totalAtResume + elapsed;
     totalToday   = todayAtResume + elapsed;
-    if (elapsed % 30 === 0) save();
+    // Local-only — a cloud push every 30s for as long as any timer runs doesn't need to
+    // happen (totalAllTime/totalToday aren't urgent cross-device state) and was a genuine
+    // source of excess writes: debug found ~30s push gaps sustained for a full hour,
+    // comfortably exceeding GitHub's 100/hour gist-write cap on its own. The task's actual
+    // completion (or any other real change) still calls save() and pushes normally.
+    if (elapsed % 30 === 0) saveLocal();
   } else {
     // At or past deadline: count all elapsed time including overtime
     totalAllTime = totalAtResume + elapsed;
@@ -2597,7 +2602,10 @@ function esc(s) {
 }
 
 // ── Persist ──
-function save() {
+// Persists to localStorage only — no cloud push. Use this for a periodic/crash-safety
+// snapshot (see tick()) where pushing on every call would be wasteful; use save() for
+// anything that should actually propagate to other devices.
+function saveLocal() {
   try {
     // inboxItems deliberately excluded here — it has its own inboxTs now, bumped directly
     // by the inbox functions, so an inbox-only change doesn't falsely bump tasksTs (which
@@ -2650,6 +2658,9 @@ function save() {
     localStorage.setItem('tt_timeHeld',   JSON.stringify(timeHeldTasks));
     localStorage.setItem('tt_lastDay',    lastDay);
   } catch(_) {}
+}
+function save() {
+  saveLocal();
   debouncePush();
 }
 function load() {

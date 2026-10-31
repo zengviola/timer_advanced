@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v148</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v154</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -1510,11 +1510,19 @@ async function ensureExportDir() {
     return exportDirHandle;
   } catch (_) { return null; }
 }
-async function downloadCsv(rows, filenameSuffix) {
+async function downloadCsv(rows, filenameSuffix, uniquePerRun = false) {
   if (rows.length === 1) { alert('没有任务数据可导出'); return; }
   const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
-  const filename = `任务完成次数_${filenameSuffix}_${todayStr()}.csv`;
+  // 总导出 reuses one file per day on purpose (it's just the running lifetime total, so
+  // re-exporting mid-day should overwrite the same file). 区间导出 is the opposite: each run
+  // covers a *different* interval and resets its baseline afterward, so a date-only filename
+  // made every same-day run silently clobber the previous run's file at the exact same path
+  // instead of writing a new one — pass uniquePerRun to stamp the time in too.
+  const stamp = uniquePerRun
+    ? `${todayStr()}_${String(new Date().getHours()).padStart(2, '0')}${String(new Date().getMinutes()).padStart(2, '0')}${String(new Date().getSeconds()).padStart(2, '0')}`
+    : todayStr();
+  const filename = `任务完成次数_${filenameSuffix}_${stamp}.csv`;
   const dir = await ensureExportDir();
   if (dir) {
     try {
@@ -1567,7 +1575,7 @@ async function exportDeltaCountsCsv() {
     const base = t._expBaseSeg || {};
     parts.forEach(seg => rows.push([t.name, seg, (counts[seg] || 0) - (base[seg] || 0)]));
   });
-  await downloadCsv(rows, '区间');
+  await downloadCsv(rows, '区间', true);
   forEachExportableTask(t => {
     t._expBaseCount = t.count || 0;
     t._expBaseSeg = Object.assign({}, t.segCountsTotal || {});

@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v154</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v155</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -1495,20 +1495,25 @@ async function idbSetHandle(key, handle) {
 // First call ever (or after permission is revoked) pops the native folder picker —
 // point it at N:\Dropbox\Data\ZW\Daily Task once. Every call after that reuses the
 // saved handle silently, as long as the browser still grants it permission.
+// Returns { handle } on success, or { reason } explaining exactly why not — the caller
+// uses `reason` to tell the user plainly instead of silently downloading to a different
+// place than they expect.
 async function ensureExportDir() {
-  if (!window.showDirectoryPicker) return null;
+  if (!window.showDirectoryPicker) return { reason: 'unsupported' };
   try {
     if (!exportDirHandle) exportDirHandle = await idbGetHandle('exportDir');
     if (exportDirHandle) {
       let perm = await exportDirHandle.queryPermission({ mode: 'readwrite' });
       if (perm !== 'granted') perm = await exportDirHandle.requestPermission({ mode: 'readwrite' });
-      if (perm === 'granted') return exportDirHandle;
+      if (perm === 'granted') return { handle: exportDirHandle };
       exportDirHandle = null;
     }
     exportDirHandle = await window.showDirectoryPicker({ id: 'timerExportDir', mode: 'readwrite' });
     await idbSetHandle('exportDir', exportDirHandle);
-    return exportDirHandle;
-  } catch (_) { return null; }
+    return { handle: exportDirHandle };
+  } catch (e) {
+    return { reason: (e && e.name === 'AbortError') ? 'cancelled' : 'denied' };
+  }
 }
 async function downloadCsv(rows, filenameSuffix, uniquePerRun = false) {
   if (rows.length === 1) { alert('没有任务数据可导出'); return; }
@@ -1523,7 +1528,7 @@ async function downloadCsv(rows, filenameSuffix, uniquePerRun = false) {
     ? `${todayStr()}_${String(new Date().getHours()).padStart(2, '0')}${String(new Date().getMinutes()).padStart(2, '0')}${String(new Date().getSeconds()).padStart(2, '0')}`
     : todayStr();
   const filename = `任务完成次数_${filenameSuffix}_${stamp}.csv`;
-  const dir = await ensureExportDir();
+  const { handle: dir, reason } = await ensureExportDir();
   if (dir) {
     try {
       const fileHandle = await dir.getFileHandle(filename, { create: true });
@@ -1531,7 +1536,15 @@ async function downloadCsv(rows, filenameSuffix, uniquePerRun = false) {
       await writable.write(blob);
       await writable.close();
       return;
-    } catch (_) { /* fall through to a normal browser download */ }
+    } catch (_) {
+      alert('写入指定文件夹失败，改用普通下载。');
+    }
+  } else if (reason === 'unsupported') {
+    alert('这个浏览器不支持直接存到指定文件夹（只有电脑版Chrome/Edge支持），已改用普通下载到默认下载文件夹。');
+  } else if (reason === 'cancelled') {
+    alert('没有选文件夹，已改用普通下载到默认下载文件夹。');
+  } else {
+    alert('没有拿到文件夹写入权限，已改用普通下载到默认下载文件夹。');
   }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

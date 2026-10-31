@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v147</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v148</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -1458,14 +1458,77 @@ function forEachExportableTask(fn) {
   skippedTasks.forEach(s => addTask(s.task));
 }
 
-function downloadCsv(rows, filenameSuffix) {
+// Remembers a local folder (via the File System Access API) so exports can be written
+// straight into it instead of going through the browser's Downloads dialog every time.
+// Chromium-only (Chrome/Edge desktop); unsupported browsers just fall through to the
+// normal <a download> below, so this is purely an upgrade where it's available.
+let exportDirHandle = null;
+function idbOpenFS() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('timerAdvancedFS', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('handles');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function idbGetHandle(key) {
+  try {
+    const db = await idbOpenFS();
+    return await new Promise((resolve, reject) => {
+      const req = db.transaction('handles', 'readonly').objectStore('handles').get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch (_) { return null; }
+}
+async function idbSetHandle(key, handle) {
+  try {
+    const db = await idbOpenFS();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('handles', 'readwrite');
+      tx.objectStore('handles').put(handle, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (_) {}
+}
+// First call ever (or after permission is revoked) pops the native folder picker —
+// point it at N:\Dropbox\Data\ZW\Daily Task once. Every call after that reuses the
+// saved handle silently, as long as the browser still grants it permission.
+async function ensureExportDir() {
+  if (!window.showDirectoryPicker) return null;
+  try {
+    if (!exportDirHandle) exportDirHandle = await idbGetHandle('exportDir');
+    if (exportDirHandle) {
+      let perm = await exportDirHandle.queryPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') perm = await exportDirHandle.requestPermission({ mode: 'readwrite' });
+      if (perm === 'granted') return exportDirHandle;
+      exportDirHandle = null;
+    }
+    exportDirHandle = await window.showDirectoryPicker({ id: 'timerExportDir', mode: 'readwrite' });
+    await idbSetHandle('exportDir', exportDirHandle);
+    return exportDirHandle;
+  } catch (_) { return null; }
+}
+async function downloadCsv(rows, filenameSuffix) {
   if (rows.length === 1) { alert('没有任务数据可导出'); return; }
   const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const filename = `任务完成次数_${filenameSuffix}_${todayStr()}.csv`;
+  const dir = await ensureExportDir();
+  if (dir) {
+    try {
+      const fileHandle = await dir.getFileHandle(filename, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return;
+    } catch (_) { /* fall through to a normal browser download */ }
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `任务完成次数_${filenameSuffix}_${todayStr()}.csv`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -1476,7 +1539,7 @@ function downloadCsv(rows, filenameSuffix) {
 // get one row per segment (segCountsTotal, including segments never completed — count 0);
 // plain tasks get a single row using their own lifetime count (t.count) — the field the
 // in-app "×N" badge already reads, so a non-segmented task is never silently left out.
-function exportSegCountsCsv() {
+async function exportSegCountsCsv() {
   const rows = [['任务名', '小项', '累计次数']];
   forEachExportableTask(t => {
     const parts = t.name.split('/');
@@ -1484,7 +1547,7 @@ function exportSegCountsCsv() {
     const counts = t.segCountsTotal || {};
     parts.forEach(seg => rows.push([t.name, seg, counts[seg] || 0]));
   });
-  downloadCsv(rows, '总');
+  await downloadCsv(rows, '总');
 }
 
 // Same shape as exportSegCountsCsv(), but each count is relative to a per-task baseline
@@ -1492,7 +1555,7 @@ function exportSegCountsCsv() {
 // what changed since the previous 区间导出, not the lifetime total. First run ever behaves
 // like the total export (no baseline yet = everything counts as "since the beginning").
 // Marks a fresh baseline on every task afterward so the next run starts counting from here.
-function exportDeltaCountsCsv() {
+async function exportDeltaCountsCsv() {
   const rows = [['任务名', '小项', '本次统计次数']];
   forEachExportableTask(t => {
     const parts = t.name.split('/');
@@ -1504,7 +1567,7 @@ function exportDeltaCountsCsv() {
     const base = t._expBaseSeg || {};
     parts.forEach(seg => rows.push([t.name, seg, (counts[seg] || 0) - (base[seg] || 0)]));
   });
-  downloadCsv(rows, '区间');
+  await downloadCsv(rows, '区间');
   forEachExportableTask(t => {
     t._expBaseCount = t.count || 0;
     t._expBaseSeg = Object.assign({}, t.segCountsTotal || {});

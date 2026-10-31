@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v155</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v156</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -1524,8 +1524,9 @@ async function downloadCsv(rows, filenameSuffix, uniquePerRun = false) {
   // covers a *different* interval and resets its baseline afterward, so a date-only filename
   // made every same-day run silently clobber the previous run's file at the exact same path
   // instead of writing a new one — pass uniquePerRun to stamp the time in too.
+  const now = new Date();
   const stamp = uniquePerRun
-    ? `${todayStr()}_${String(new Date().getHours()).padStart(2, '0')}${String(new Date().getMinutes()).padStart(2, '0')}${String(new Date().getSeconds()).padStart(2, '0')}`
+    ? `${todayStr()}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}${String(now.getMilliseconds()).padStart(3, '0')}`
     : todayStr();
   const filename = `任务完成次数_${filenameSuffix}_${stamp}.csv`;
   const { handle: dir, reason } = await ensureExportDir();
@@ -1560,15 +1561,29 @@ async function downloadCsv(rows, filenameSuffix, uniquePerRun = false) {
 // get one row per segment (segCountsTotal, including segments never completed — count 0);
 // plain tasks get a single row using their own lifetime count (t.count) — the field the
 // in-app "×N" badge already reads, so a non-segmented task is never silently left out.
+// Both export functions below are async (directory-picker + file-write can take a moment),
+// and the buttons calling them have no built-in debounce — a double-click (or just an
+// impatient second click before the first finishes) could run exportDeltaCountsCsv() twice,
+// overlapping. Its second run would compute the delta against the baseline the *first* run
+// had already just reset, getting all zeros, and overwrite the first run's correct file (even
+// with downloadCsv()'s millisecond-stamped filename, since both calls are mid-flight at once
+// and could easily land in the same millisecond). This guard makes the second, overlapping
+// call a no-op instead of racing it.
+let exportInProgress = false;
+
 async function exportSegCountsCsv() {
-  const rows = [['任务名', '小项', '累计次数']];
-  forEachExportableTask(t => {
-    const parts = t.name.split('/');
-    if (parts.length <= 1) { rows.push([t.name, t.name, t.count || 0]); return; }
-    const counts = t.segCountsTotal || {};
-    parts.forEach(seg => rows.push([t.name, seg, counts[seg] || 0]));
-  });
-  await downloadCsv(rows, '总');
+  if (exportInProgress) return;
+  exportInProgress = true;
+  try {
+    const rows = [['任务名', '小项', '累计次数']];
+    forEachExportableTask(t => {
+      const parts = t.name.split('/');
+      if (parts.length <= 1) { rows.push([t.name, t.name, t.count || 0]); return; }
+      const counts = t.segCountsTotal || {};
+      parts.forEach(seg => rows.push([t.name, seg, counts[seg] || 0]));
+    });
+    await downloadCsv(rows, '总');
+  } finally { exportInProgress = false; }
 }
 
 // Same shape as exportSegCountsCsv(), but each count is relative to a per-task baseline
@@ -1577,23 +1592,27 @@ async function exportSegCountsCsv() {
 // like the total export (no baseline yet = everything counts as "since the beginning").
 // Marks a fresh baseline on every task afterward so the next run starts counting from here.
 async function exportDeltaCountsCsv() {
-  const rows = [['任务名', '小项', '本次统计次数']];
-  forEachExportableTask(t => {
-    const parts = t.name.split('/');
-    if (parts.length <= 1) {
-      rows.push([t.name, t.name, (t.count || 0) - (t._expBaseCount || 0)]);
-      return;
-    }
-    const counts = t.segCountsTotal || {};
-    const base = t._expBaseSeg || {};
-    parts.forEach(seg => rows.push([t.name, seg, (counts[seg] || 0) - (base[seg] || 0)]));
-  });
-  await downloadCsv(rows, '区间', true);
-  forEachExportableTask(t => {
-    t._expBaseCount = t.count || 0;
-    t._expBaseSeg = Object.assign({}, t.segCountsTotal || {});
-  });
-  save();
+  if (exportInProgress) return;
+  exportInProgress = true;
+  try {
+    const rows = [['任务名', '小项', '本次统计次数']];
+    forEachExportableTask(t => {
+      const parts = t.name.split('/');
+      if (parts.length <= 1) {
+        rows.push([t.name, t.name, (t.count || 0) - (t._expBaseCount || 0)]);
+        return;
+      }
+      const counts = t.segCountsTotal || {};
+      const base = t._expBaseSeg || {};
+      parts.forEach(seg => rows.push([t.name, seg, (counts[seg] || 0) - (base[seg] || 0)]));
+    });
+    await downloadCsv(rows, '区间', true);
+    forEachExportableTask(t => {
+      t._expBaseCount = t.count || 0;
+      t._expBaseSeg = Object.assign({}, t.segCountsTotal || {});
+    });
+    save();
+  } finally { exportInProgress = false; }
 }
 
 function doComplete() {

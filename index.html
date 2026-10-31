@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v157</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v158</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -740,6 +740,13 @@ let spendGrossAtConfirm = 0;  // spendGross at that moment; what's charged after
 let spendAliveAt  = 0;   // last moment some device was actively running this 消耗 session (synced); minutes after it + grace aren't charged
 const UNATTENDED_GRACE_MS = 3 * 60000;
 let spendStateTs  = 0;   // ms timestamp of the last local 消耗 start/stop; lets other devices adopt it without a stale pull undoing it
+// While a task whose name has 炒菜准备 is running, Bilibili is allowed on every device (the
+// iPhone app and the Mac/Windows guards read cookFreeUntil from the gist). It expires on its
+// own a bit after the task's planned end, so a device going to sleep mid-task can't leave it open.
+const COOK_UNLOCK_KEY = '炒菜准备';
+const COOK_GRACE_MS   = 10 * 60000;
+let cookFreeUntil = 0;
+let cookTs        = 0;   // when this device last changed cookFreeUntil; the newest change wins across devices
 // 19:00–20:30 (device local time) is free: 消耗 can start at any balance and charges nothing.
 // On Fri/Sat nights the window runs from 19:00 all the way to midnight instead.
 const FREE_WINDOW = [19 * 60, 20 * 60 + 30];
@@ -1326,6 +1333,7 @@ function loadNext(autoStart = false) {
     ticker = setInterval(tick, 1000);
     btnSP.textContent = '暂停';
   }
+  syncCookUnlock();
   checkBrushReminder();
 }
 
@@ -1354,6 +1362,15 @@ function startPause() {
     timerStartedAt = null;
   }
   btnSP.textContent = running ? '暂停' : '继续';
+  syncCookUnlock();
+}
+
+function syncCookUnlock() {
+  const until = running && cur && cur.name.includes(COOK_UNLOCK_KEY) ? Date.now() + left * 1000 + COOK_GRACE_MS : 0;
+  if ((until > 0) === (cookFreeUntil > 0)) return;
+  cookFreeUntil = until;
+  cookTs = Date.now();
+  if (cloudReady) pushToCloud();  // guards gate on this; don't wait for the debounce
 }
 
 function tick() {
@@ -2778,6 +2795,7 @@ function saveLocal() {
 }
 function save() {
   saveLocal();
+  syncCookUnlock();  // catches every way a task stops or changes, not just the 开始/暂停 button
   debouncePush();
 }
 function load() {
@@ -3277,6 +3295,7 @@ function getCloudPayload() {
     spendStateTs, spendStartAt, spendDeducted, spendStartCoins, spendGross, spendEarned, spendAliveAt,
     spendConfirmedAt, spendGrossAtConfirm, spendDepletedAt, spendWarnIdx,
     stepsDate, stepsSeen, stepsCredited, stepsLog,
+    cookFreeUntil, cookTs,
     savedDate: todayStr()
   });
 }
@@ -3551,6 +3570,7 @@ async function pushToCloud() {
   // from another device — otherwise e.g. this device's spend heartbeat would overwrite a
   // 停止 made on the other device, and neither would ever see it again.
   let cloudQueue = null;  // cloud's queue, when it's newer than ours — must not be overwritten below
+  let cloudCook  = null;  // cloud's 炒菜准备 unlock, when another device changed it more recently
   if (cloudGistId) {
     try {
       const latest = await fetch(`https://api.github.com/gists/${cloudGistId}`, {
@@ -3561,6 +3581,7 @@ async function pushToCloud() {
         const d = JSON.parse(raw);
         noteCloudAlive(d);
         if ((d.tasksTs || 0) > tasksTs) cloudQueue = d;
+        if ((d.cookTs || 0) > cookTs) cloudCook = d;
         // applyCloudCoins() merges deltas and is a no-op when nothing's actually new, so it's
         // safe (and necessary, to keep coinsBase current) to always call it here rather than
         // gate on a cross-device timestamp comparison.
@@ -3581,6 +3602,7 @@ async function pushToCloud() {
   // keep the cloud's queue fields instead of stomping them with this device's stale copy.
   // The next poll pulls them in once nothing is running.
   const payload = JSON.parse(getCloudPayload());
+  if (cloudCook) { payload.cookFreeUntil = cloudCook.cookFreeUntil; payload.cookTs = cloudCook.cookTs; }
   if (cloudQueue) {
     // `tasks` merges per-task id instead of taking the cloud's copy wholesale — otherwise
     // this device's own just-made edit (e.g. a completion count bump) would get silently

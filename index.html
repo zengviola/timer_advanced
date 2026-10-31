@@ -408,7 +408,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v145</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v146</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -754,7 +754,15 @@ let inboxItems    = [];  // quick-capture notes not yet turned into a real task 
 // Its own timestamp, independent of tasksTs — an inbox note added on one device must not
 // get silently dropped on another just because that other device happened to touch its own
 // task queue more recently (which used to bundle inboxItems in under the same tasksTs gate).
+// No longer used to gate the merge itself (mergeCloudInbox() unions by id instead, since a
+// single "newer wins wholesale" timestamp can only ever reflect ONE device's latest change —
+// an item added on the device that doesn't happen to hold the bigger timestamp was silently
+// lost forever). Kept around as a simple "last touched" marker for the payload.
 let inboxTs       = 0;
+// Tombstones: id -> when it was removed/converted, so a union merge with another device
+// that hasn't learned about the removal yet doesn't resurrect it. Trimmed to a reasonable
+// age in mergeCloudInbox() so this doesn't grow forever.
+let removedInboxIds = {};
 let tasksTs       = 0;   // ms timestamp of last local change to tasks/bigTasks/dailyDefs/shelvedTasks/heldTasks; guards against a stale cloud pull clobbering a fresher local queue
 let _lastQueueSnap = null; // internal: snapshot used by save() to detect whether queue state actually changed
 let smallCount    = 0;   // cumulative small-cycle completions (drives big-cycle triggers)
@@ -985,6 +993,7 @@ function addInboxItem() {
 }
 function removeInboxItem(id) {
   inboxItems = inboxItems.filter(x => x.id !== id);
+  removedInboxIds[id] = Date.now();
   inboxTs = Date.now();
   renderInbox();
   save();
@@ -993,6 +1002,7 @@ function convertInboxItem(id) {
   const item = inboxItems.find(x => x.id === id);
   if (!item) return;
   inboxItems = inboxItems.filter(x => x.id !== id);
+  removedInboxIds[id] = Date.now();
   inboxTs = Date.now();
   renderInbox();
   save();
@@ -2632,6 +2642,7 @@ function save() {
     localStorage.setItem('tt_shelved',   JSON.stringify(shelvedTasks));
     localStorage.setItem('tt_inbox',     JSON.stringify(inboxItems));
     localStorage.setItem('tt_inboxTs',   inboxTs);
+    localStorage.setItem('tt_removedInboxIds', JSON.stringify(removedInboxIds));
     localStorage.setItem('tt_heldTasks',  JSON.stringify(heldTasks));
     localStorage.setItem('tt_locState',   locState);
     localStorage.setItem('tt_smallCount', smallCount);
@@ -2715,6 +2726,8 @@ function load() {
     if (ib) inboxItems = JSON.parse(ib);
     const ibts = localStorage.getItem('tt_inboxTs');
     if (ibts) inboxTs = parseInt(ibts) || 0;
+    const rib = localStorage.getItem('tt_removedInboxIds');
+    if (rib) removedInboxIds = JSON.parse(rib);
     const dh = localStorage.getItem('tt_dayHeld');
     if (dh) dayHeldTasks = JSON.parse(dh);
     const th = localStorage.getItem('tt_timeHeld');
@@ -3129,7 +3142,7 @@ function getCloudPayload() {
     totalToday, totalTodayDate: todayStr(),
     completedToday, completedTodayDate: todayStr(),
     coins, coinsToday, coinsTodayDate: todayStr(), coinsTs,
-    skippedTasks, shelvedTasks, inboxItems, inboxTs, tasksTs,
+    skippedTasks, shelvedTasks, inboxItems, inboxTs, removedInboxIds, tasksTs,
     heldTasks, timeHeldTasks, locState, smallCount, spendDifficulty,
     left, total, curId: cur ? cur.id : -1,
     spendingCoins, spendTs: Date.now(),
@@ -3253,16 +3266,30 @@ function applyCloudPayload(raw) {
   } catch(e) { console.error('Cloud apply failed', e); }
 }
 
-// inboxItems syncs on its own clock, independent of tasksTs — an inbox note added on one
-// device must not get silently dropped just because another device's task queue changed
-// more recently. Returns whether anything new was actually merged.
+// Merges inboxItems by unioning both sides' ids instead of picking one list wholesale by
+// timestamp — a single "whose clock is bigger" comparison can only ever favor ONE device,
+// so an item added on whichever device DIDN'T win that comparison was silently lost for
+// good (the actual bug: two real items sat in the cloud for over a week, each added on a
+// device that never had both, because neither device's inboxTs ever "won" over the other's
+// once both were non-empty). A union can't lose an addition; removedInboxIds (tombstones,
+// also merged and unioned here) stops a union from resurrecting something removed/converted
+// elsewhere before that device has seen this one's copy. Returns whether anything changed.
 function mergeCloudInbox(d) {
-  if ((d.inboxTs || 0) > inboxTs || (inboxItems.length === 0 && (d.inboxItems || []).length > 0)) {
-    if (d.inboxItems !== undefined) inboxItems = d.inboxItems;
-    inboxTs = Math.max(d.inboxTs || 0, inboxTs);
-    return true;
-  }
-  return false;
+  const beforeIds = inboxItems.map(x => x.id).sort().join(',');
+  Object.entries(d.removedInboxIds || {}).forEach(([id, ts]) => {
+    if (!removedInboxIds[id] || ts > removedInboxIds[id]) removedInboxIds[id] = ts;
+  });
+  // Trim tombstones older than 30 days — once that long has passed, every device has
+  // certainly long since pulled the removal, so there's nothing left for it to protect.
+  const cutoff = Date.now() - 30 * 86400000;
+  Object.keys(removedInboxIds).forEach(id => { if (removedInboxIds[id] < cutoff) delete removedInboxIds[id]; });
+
+  const byId = new Map(inboxItems.map(x => [x.id, x]));
+  (d.inboxItems || []).forEach(x => { if (!byId.has(x.id)) byId.set(x.id, x); });
+  inboxItems = [...byId.values()].filter(x => !removedInboxIds[x.id]);
+  inboxTs = Math.max(d.inboxTs || 0, inboxTs);
+
+  return inboxItems.map(x => x.id).sort().join(',') !== beforeIds;
 }
 
 // Merges in whatever the cloud's coins changed by since we last looked, instead of picking

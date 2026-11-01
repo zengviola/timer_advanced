@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v161</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v162</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -3324,39 +3324,35 @@ function noteCloudAlive(d) {
     spendAliveAt = Math.max(spendAliveAt, d.spendAliveAt || 0);
 }
 
-// Per-task merge for the main `tasks` queue specifically — NOT the other 5 queue-ish
-// arrays below (bigTasks/dailyDefs/shelvedTasks/heldTasks/timeHeldTasks), which still
-// accept-or-reject the whole remote snapshot wholesale based on tasksTs, same as always.
-// Those are edited far less often, so that coarser (and much simpler) rule is an
-// acceptable tradeoff there; `tasks` is edited constantly (every completion bumps a
-// count), so the coarse rule was actively losing data: if device A completes task X
-// (bumping tasksTs) right as device B edits unrelated task Y (bumping tasksTs again,
-// slightly later), B's push would overwrite A's entire queue snapshot wholesale —
-// silently reverting A's completion/count change even though B never touched task X.
+// Per-task-id merge, shared by every queue-ish array (tasks/bigTasks/dailyDefs/
+// shelvedTasks/heldTasks/timeHeldTasks/done). A task id present on both sides keeps
+// whichever copy has the newer per-task `_mtime` stamp (see pushTop() and the mutation
+// sites that bump it directly) when both have one; otherwise `remoteNewer` (the overall
+// "which snapshot is fresher" signal) breaks the tie. Either way, a task id present on
+// only ONE side is always kept — it is never dropped just because the other side is
+// judged "newer" overall.
 //
-// Fix: merge by task id. A task id present on both sides keeps whichever copy has the
-// newer per-task `_mtime` stamp (see pushTop() and the mutation sites that bump it
-// directly) — this is the actual fix for that class of bug. A task id present on only
-// one side falls back to `remoteNewer` (the same overall "which snapshot is fresher"
-// signal the other 5 arrays use) to decide whether to keep it: trust whichever side is
-// the fresher overall snapshot for *presence*, since there's no per-task signal to
-// resolve that question (a task with no counterpart on the other side wasn't edited
-// there — it was either added there recently, or removed here recently, and apart from
-// the overall timestamp there is no way to tell which from the data alone).
-//
-// Known limitation: if a task is fully consumed on one side (completed, moved to `done`,
-// or similarly removed from `tasks` for good) while the *other* side's snapshot predates
-// that and is also the one judged "newer" overall (e.g. due to an unrelated, later local
-// edit elsewhere bumping its tasksTs past the removal's), that stale copy can still win
-// presence and reappear. Fixing that fully would need per-task deletion tombstones, not
-// just last-write-wins timestamps — out of scope for now; flag it if it comes up.
+// This used to be presence-by-remoteNewer too: a task with no counterpart on the other
+// side was kept only if its own side won the overall freshness check, on the reasoning
+// that it was "either added there recently, or removed here recently". In practice that
+// silently deleted real data — e.g. a device that had just added several new 小循环
+// tasks, before it got a chance to push them, could have ALL of them erased by an
+// unrelated, staler-but-"newer-timestamped" remote snapshot that simply had never heard
+// of them. Losing active tasks outright is much worse than the tradeoff this creates:
+// a task fully removed on one side (completed, moved to `done`, etc.) can reappear if
+// the other side's snapshot still has it and wins the tie-break. That's recoverable by
+// hand (skip/delete it again); silent deletion of live tasks was not.
 function mergeTaskQueue(localList, remoteList, remoteNewer) {
-  const baseList = remoteNewer ? remoteList : localList;
-  const otherMap  = new Map((remoteNewer ? localList : remoteList).map(t => [t.id, t]));
-  return baseList.map(baseTask => {
+  const baseList  = remoteNewer ? remoteList : localList;
+  const otherList = remoteNewer ? localList  : remoteList;
+  const otherMap  = new Map(otherList.map(t => [t.id, t]));
+  const merged = baseList.map(baseTask => {
     const other = otherMap.get(baseTask.id);
     return other && (other._mtime || 0) > (baseTask._mtime || 0) ? other : baseTask;
   });
+  const seen = new Set(merged.map(t => t.id));
+  otherList.forEach(t => { if (!seen.has(t.id)) merged.push(t); });
+  return merged;
 }
 
 function applyCloudPayload(raw) {
@@ -3369,25 +3365,30 @@ function applyCloudPayload(raw) {
     // restored from 已搁置, or re-shelve tasks that are live in the current queue).
     const localQueueEmpty = tasks.length === 0 && bigTasks.length === 0 && dailyDefs.length === 0 && shelvedTasks.length === 0;
     const remoteNewer = (d.tasksTs || 0) > tasksTs;
-    // `tasks` merges per-task id regardless of remoteNewer — see mergeTaskQueue().
-    if (d.tasks !== undefined) tasks = mergeTaskQueue(tasks, d.tasks, remoteNewer || localQueueEmpty);
-    if (remoteNewer || localQueueEmpty) {
-      if (d.bigTasks     !== undefined) bigTasks     = d.bigTasks;
-      if (d.dailyDefs    !== undefined) dailyDefs    = d.dailyDefs;
-      if (d.shelvedTasks !== undefined) shelvedTasks = d.shelvedTasks;
-      if (d.heldTasks    !== undefined) {
-        heldTasks = d.heldTasks;
-      } else if (d.homeTasks !== undefined || d.workTasks !== undefined) {
-        // Legacy cloud payload from before the 3-state location split
-        heldTasks = [...(d.homeTasks || []), ...(d.workTasks || [])];
-      }
-      if (d.timeHeldTasks !== undefined) timeHeldTasks = d.timeHeldTasks;
-      // done was previously overwritten unconditionally on every pull (no remoteNewer
-      // gate at all) — a stale cloud payload could wipe out a task just completed locally
-      // (shifted out of tasks, moved into done) a moment before the pull landed, making it
-      // vanish from both arrays. Gated here like the other non-per-task arrays above.
-      if (d.done       !== undefined) done         = d.done;
+    // Every one of these arrays is merged by task id via mergeTaskQueue(), not wholesale-
+    // replaced, even when remoteNewer is true. It used to be: whichever side was "newer"
+    // completely replaced the other, so any task that existed ONLY on the losing side (e.g.
+    // one just added locally, before this device had a chance to push it) was silently
+    // dropped — not kept, not merged, just gone. That is what wiped out most of the 小循环
+    // tasks down to a single survivor: a sparse/stale remote snapshot got treated as newer
+    // and, having no record of the rest, erased them. mergeTaskQueue() now always keeps the
+    // union of ids from both sides, using remoteNewer only to pick which copy wins when the
+    // SAME id exists on both sides (or, when _mtime is present and newer, letting that win
+    // regardless). The known tradeoff (see mergeTaskQueue's own comment) is that a task
+    // fully removed on one side can still reappear from the other — annoying but recoverable
+    // by hand, unlike outright data loss.
+    if (d.tasks        !== undefined) tasks        = mergeTaskQueue(tasks,        d.tasks,        remoteNewer || localQueueEmpty);
+    if (d.bigTasks     !== undefined) bigTasks     = mergeTaskQueue(bigTasks,     d.bigTasks,     remoteNewer || localQueueEmpty);
+    if (d.dailyDefs    !== undefined) dailyDefs    = mergeTaskQueue(dailyDefs,    d.dailyDefs,    remoteNewer || localQueueEmpty);
+    if (d.shelvedTasks !== undefined) shelvedTasks = mergeTaskQueue(shelvedTasks, d.shelvedTasks, remoteNewer || localQueueEmpty);
+    if (d.heldTasks    !== undefined) {
+      heldTasks = mergeTaskQueue(heldTasks, d.heldTasks, remoteNewer || localQueueEmpty);
+    } else if (d.homeTasks !== undefined || d.workTasks !== undefined) {
+      // Legacy cloud payload from before the 3-state location split
+      heldTasks = mergeTaskQueue(heldTasks, [...(d.homeTasks || []), ...(d.workTasks || [])], remoteNewer || localQueueEmpty);
     }
+    if (d.timeHeldTasks !== undefined) timeHeldTasks = mergeTaskQueue(timeHeldTasks, d.timeHeldTasks, remoteNewer || localQueueEmpty);
+    if (d.done          !== undefined) done          = mergeTaskQueue(done,          d.done,          remoteNewer || localQueueEmpty);
     tasksTs = Math.max(d.tasksTs || 0, tasksTs);
     mergeCloudInbox(d);
     // Math.max, not overwrite: a stale pull setting uid backward would let this device
@@ -3626,14 +3627,15 @@ async function pushToCloud() {
   const payload = JSON.parse(getCloudPayload());
   if (cloudCook) { payload.cookFreeUntil = cloudCook.cookFreeUntil; payload.cookTs = cloudCook.cookTs; }
   if (cloudQueue) {
-    // `tasks` merges per-task id instead of taking the cloud's copy wholesale — otherwise
-    // this device's own just-made edit (e.g. a completion count bump) would get silently
-    // discarded here just because the cloud's tasksTs happens to be newer overall (bumped
-    // by a completely unrelated edit on the other device). See mergeTaskQueue().
-    if (cloudQueue.tasks !== undefined) payload.tasks = mergeTaskQueue(payload.tasks, cloudQueue.tasks, true);
-    for (const key of ['bigTasks', 'dailyDefs', 'shelvedTasks', 'heldTasks', 'timeHeldTasks', 'tasksTs']) {
-      if (cloudQueue[key] !== undefined) payload[key] = cloudQueue[key];
+    // Every list field merges per-task id instead of taking the cloud's copy wholesale —
+    // otherwise this device's own just-made edit (e.g. a completion count bump, or a task
+    // added here that the cloud hasn't seen yet) would get silently discarded just because
+    // the cloud's tasksTs happens to be newer overall (bumped by a completely unrelated
+    // edit on the other device). See mergeTaskQueue().
+    for (const key of ['tasks', 'bigTasks', 'dailyDefs', 'shelvedTasks', 'heldTasks', 'timeHeldTasks', 'done']) {
+      if (cloudQueue[key] !== undefined) payload[key] = mergeTaskQueue(payload[key] || [], cloudQueue[key], true);
     }
+    if (cloudQueue.tasksTs !== undefined) payload.tasksTs = cloudQueue.tasksTs;
   }
   const body = JSON.stringify({
     description: 'Timer Advanced — task data',

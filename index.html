@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v160</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v161</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -3382,10 +3382,14 @@ function applyCloudPayload(raw) {
         heldTasks = [...(d.homeTasks || []), ...(d.workTasks || [])];
       }
       if (d.timeHeldTasks !== undefined) timeHeldTasks = d.timeHeldTasks;
+      // done was previously overwritten unconditionally on every pull (no remoteNewer
+      // gate at all) — a stale cloud payload could wipe out a task just completed locally
+      // (shifted out of tasks, moved into done) a moment before the pull landed, making it
+      // vanish from both arrays. Gated here like the other non-per-task arrays above.
+      if (d.done       !== undefined) done         = d.done;
     }
     tasksTs = Math.max(d.tasksTs || 0, tasksTs);
     mergeCloudInbox(d);
-    if (d.done       !== undefined) done         = d.done;
     // Math.max, not overwrite: a stale pull setting uid backward would let this device
     // later hand out an id another device already used, corrupting any id-keyed merge
     // (e.g. mergeTaskQueue() below).

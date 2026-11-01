@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v158</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v159</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -1476,11 +1476,13 @@ function backfillAllSegCountsTotal() {
 }
 
 // Walks every task once (dedup'd by id) and hands it to fn — shared by both export modes
-// below so they see exactly the same set of tasks.
+// below so they see exactly the same set of tasks. 一次性任务 (type 'once') never repeat, so
+// a completion count for one is meaningless — they're skipped here rather than filtered per
+// export mode.
 function forEachExportableTask(fn) {
   const seen = new Set();
   const addTask = t => {
-    if (!t || seen.has(t.id)) return;
+    if (!t || seen.has(t.id) || t.type === 'once') return;
     seen.add(t.id);
     fn(t);
   };

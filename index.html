@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v162</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v163</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -595,6 +595,16 @@
       <button class="btn btn-muted btn-sm" id="btnRestoreAllShelved">全部恢复</button>
     </div>
     <div id="shelvedList"></div>
+  </div>
+
+  <!-- Held by 出现的时间 (e.g. "其他" only shows before 18点) — otherwise these tasks are
+       still fully intact but invisible everywhere, which reads as "it disappeared". -->
+  <div class="section" id="timeHeldSec" style="display:none">
+    <div class="sec-head">
+      <span class="sec-label" style="color:var(--muted)">⏰ 按出现时间隐藏</span>
+      <button class="btn btn-muted btn-sm" id="btnRestoreAllTimeHeld">全部恢复</button>
+    </div>
+    <div id="timeHeldList"></div>
   </div>
 
   <!-- Completed -->
@@ -888,6 +898,9 @@ const btnRestoreAll   = document.getElementById('btnRestoreAll');
 const shelvedSec   = document.getElementById('shelvedSec');
 const shelvedList  = document.getElementById('shelvedList');
 const btnRestoreAllShelved = document.getElementById('btnRestoreAllShelved');
+const timeHeldSec  = document.getElementById('timeHeldSec');
+const timeHeldList = document.getElementById('timeHeldList');
+const btnRestoreAllTimeHeld = document.getElementById('btnRestoreAllTimeHeld');
 
 // ── Type Toggle ──
 // Scoped to its own id (not just '.type-toggle'/'.type-btn' by class) — several other
@@ -1846,6 +1859,48 @@ function renderShelved() {
   }).join('');
 }
 
+function restoreTimeHeld(taskId) {
+  const idx = timeHeldTasks.findIndex(t => t.id === taskId);
+  if (idx === -1) return;
+  const t = timeHeldTasks.splice(idx, 1)[0];
+  pushTop(t);
+  if (!cur) loadNext(); else renderQ();
+  renderTimeHeld(); save();
+}
+
+function restoreAllTimeHeld() {
+  if (timeHeldTasks.length === 0) return;
+  timeHeldTasks.forEach(t => pushTop(t));
+  timeHeldTasks = [];
+  if (!cur) loadNext(); else renderQ();
+  renderTimeHeld(); save();
+}
+
+// Renders whatever's currently sitting in timeHeldTasks — without this, a task held by its
+// 出现的时间 restriction (e.g. "其他" only shows before 18点) is fully intact in the data but
+// invisible everywhere in the UI, indistinguishable from actually having been deleted.
+function renderTimeHeld() {
+  if (timeHeldTasks.length === 0) { timeHeldSec.style.display = 'none'; return; }
+  timeHeldSec.style.display = 'flex';
+  timeHeldList.innerHTML = timeHeldTasks.map(t => {
+    const mins = Math.ceil(t.duration / 60);
+    const lp   = t.count > 0 ? `<span class="pill">×${t.count}</span>` : '';
+    const tagP = tagPills(t.tags);
+    return `<div class="card c-${t.type}" style="opacity:.6">
+      <div class="card-body">
+        <div class="card-name">${esc(t.name)}</div>
+        <div class="card-sub">
+          <span>${mins} 分钟</span>
+          <span class="badge b-${t.type}">${tn(t.type)}</span>
+          ${lp}${tagP}
+          <span style="color:var(--muted)">${timeSlotPill(t.timeSlot)} 要等到符合时间才出现</span>
+        </div>
+      </div>
+      <button class="btn btn-muted btn-sm" onclick="restoreTimeHeld(${t.id})">恢复</button>
+    </div>`;
+  }).join('');
+}
+
 function skipToday() {
   // All cycle types: remove from today's queue, can restore or comes back tomorrow
   if (!cur || cur.type === 'once') return;
@@ -2537,6 +2592,7 @@ function refreshDisp() {
 }
 
 function renderQ() {
+  renderTimeHeld();
   const up = tasks.slice(1);
   qCnt.textContent = tasks.length > 0 ? `共 ${tasks.length} 个` : '';
   if (up.length === 0) { qList.innerHTML = `<div class="empty">队列为空</div>`; return; }
@@ -2693,6 +2749,7 @@ btnSpend.addEventListener('click', convertToSpend);
 btnNextSeg.addEventListener('click', advanceNameSegment);
 btnClear.addEventListener('click', () => { done = []; renderDone(); save(); });
 btnRestoreAllShelved.addEventListener('click', restoreAllShelved);
+btnRestoreAllTimeHeld.addEventListener('click', restoreAllTimeHeld);
 
 document.addEventListener('keydown', e => {
   const tag = e.target.tagName;

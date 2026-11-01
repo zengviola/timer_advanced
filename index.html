@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v159</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v160</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -665,9 +665,10 @@
       <label class="fl">出现的时间</label>
       <div class="type-toggle" id="timeSlotToggle">
         <button class="type-btn on on-once" data-slot="" onclick="setSelTimeSlot('')">不限</button>
-        <button class="type-btn" data-slot="6pm以后" onclick="setSelTimeSlot('6pm以后')">6pm以后</button>
+        <button class="type-btn" data-slot="after" onclick="setSelTimeSlot('after')">18点以后</button>
         <button class="type-btn" data-slot="其他" onclick="setSelTimeSlot('其他')">其他</button>
       </div>
+      <select id="timeSlotHour" style="display:none" onchange="setSelTimeSlot('after')"><option value="0">0点</option><option value="1">1点</option><option value="2">2点</option><option value="3">3点</option><option value="4">4点</option><option value="5">5点</option><option value="6">6点</option><option value="7">7点</option><option value="8">8点</option><option value="9">9点</option><option value="10">10点</option><option value="11">11点</option><option value="12">12点</option><option value="13">13点</option><option value="14">14点</option><option value="15">15点</option><option value="16">16点</option><option value="17">17点</option><option value="18" selected>18点</option><option value="19">19点</option><option value="20">20点</option><option value="21">21点</option><option value="22">22点</option><option value="23">23点</option></select>
     </div>
 
     <!-- Big trigger config -->
@@ -814,13 +815,34 @@ function tagPills(tags) {
 }
 let selTags       = [];    // selected tags in add form (multi-select)
 let selDays       = [];    // selected days for add form ([] = every day)
-let selTimeSlot   = '';    // '' | '6pm以后' | '其他' — selected time-of-day restriction in add form (single-select)
+let selTimeSlot   = '';    // '' | 'N点以后' | '其他' — selected time-of-day restriction in add form (single-select)
 
-// A task with no timeSlot always shows; '6pm以后' only shows from 18:00 on, '其他' only before that.
+// A task with no timeSlot always shows; 'N点以后' only shows from N:00 on, '其他' only before 18:00.
+// Legacy '6pm以后' (from before the hour was adjustable) is read as '18点以后'.
 function isEvening() { return new Date().getHours() >= 18; }
+function slotAfterHour(slot) {
+  if (slot === '6pm以后') return 18;
+  const m = /^(\d{1,2})点以后$/.exec(slot || '');
+  return m ? parseInt(m[1]) : null;
+}
 function timeSlotVisible(slot) {
   if (!slot) return true;
-  return slot === '6pm以后' ? isEvening() : !isEvening();
+  const h = slotAfterHour(slot);
+  return h !== null ? new Date().getHours() >= h : !isEvening();
+}
+// Shared by the add form and the edit modal: 'after' means "N点以后" with N from the hour dropdown.
+function applyTimeSlotToggle(toggleId, hourSelId, slot) {
+  const sel = document.getElementById(hourSelId);
+  if (slot === 'after') slot = `${sel.value}点以后`;
+  const h = slotAfterHour(slot);
+  if (h !== null) { sel.value = h; slot = `${h}点以后`; }
+  sel.style.display = h !== null ? '' : 'none';
+  document.querySelectorAll(`#${toggleId} .type-btn`).forEach(b => {
+    const on = b.dataset.slot === 'after' ? h !== null : b.dataset.slot === slot;
+    b.className = 'type-btn' + (on ? ' on on-once' : '');
+    if (b.dataset.slot === 'after') b.textContent = `${sel.value}点以后`;
+  });
+  return slot;
 }
 function timeSlotPill(slot) {
   return slot ? `<span class="pill">🕕 ${esc(slot)}</span>` : '';
@@ -962,7 +984,7 @@ function reconcileLocVisibility() {
   }
 }
 
-// Same idea as reconcileLocVisibility(), but for the 6pm boundary instead of location —
+// Same idea as reconcileLocVisibility(), but for the N点以后 boundary instead of location —
 // called on load/cloud-sync and on the existing every-minute check, since (unlike
 // location) the clock crosses that boundary on its own while the app just sits open.
 // Returns whether anything actually moved, so periodic callers only re-render when needed.
@@ -2699,10 +2721,7 @@ function toggleSelDay(d) {
   });
 }
 function setSelTimeSlot(slot) {
-  selTimeSlot = slot;
-  document.querySelectorAll('#timeSlotToggle .type-btn').forEach(b => {
-    b.className = 'type-btn' + (b.dataset.slot === slot ? ' on on-once' : '');
-  });
+  selTimeSlot = applyTimeSlotToggle('timeSlotToggle', 'timeSlotHour', slot);
 }
 function renderSpendDifficultyToggle() {
   document.querySelectorAll('#spendDifficultyToggle .type-btn').forEach(b => {
@@ -3013,10 +3032,7 @@ function setModalDays(days) {
   });
 }
 function setModalTimeSlot(slot) {
-  modalTimeSlot = slot || '';
-  document.querySelectorAll('#modalTimeSlotToggle .type-btn').forEach(b => {
-    b.className = 'type-btn' + (b.dataset.slot === modalTimeSlot ? ' on on-once' : '');
-  });
+  modalTimeSlot = applyTimeSlotToggle('modalTimeSlotToggle', 'modalTimeSlotHour', slot || '');
 }
 
 function setModalNameSegs(name) {
@@ -3821,9 +3837,10 @@ initCloud();
       <label class="fl">出现的时间</label>
       <div class="type-toggle" id="modalTimeSlotToggle">
         <button class="type-btn" data-slot="" onclick="setModalTimeSlot('')">不限</button>
-        <button class="type-btn" data-slot="6pm以后" onclick="setModalTimeSlot('6pm以后')">6pm以后</button>
+        <button class="type-btn" data-slot="after" onclick="setModalTimeSlot('after')">18点以后</button>
         <button class="type-btn" data-slot="其他" onclick="setModalTimeSlot('其他')">其他</button>
       </div>
+      <select id="modalTimeSlotHour" style="display:none" onchange="setModalTimeSlot('after')"><option value="0">0点</option><option value="1">1点</option><option value="2">2点</option><option value="3">3点</option><option value="4">4点</option><option value="5">5点</option><option value="6">6点</option><option value="7">7点</option><option value="8">8点</option><option value="9">9点</option><option value="10">10点</option><option value="11">11点</option><option value="12">12点</option><option value="13">13点</option><option value="14">14点</option><option value="15">15点</option><option value="16">16点</option><option value="17">17点</option><option value="18" selected>18点</option><option value="19">19点</option><option value="20">20点</option><option value="21">21点</option><option value="22">22点</option><option value="23">23点</option></select>
     </div>
     <div class="fg" id="modalTrigRow" style="display:none">
       <label class="fl">每 N 次小循环触发</label>

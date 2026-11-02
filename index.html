@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v163</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v164</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -3381,6 +3381,16 @@ function noteCloudAlive(d) {
     spendAliveAt = Math.max(spendAliveAt, d.spendAliveAt || 0);
 }
 
+// So does someone actually using the gated apps: the iPhone's Screen Time monitor and the Mac
+// guard write alive.json while 红果/Bilibili are open. Without it, starting 消耗 on the phone
+// and switching to 红果 suspends this page, and none of that viewing got charged.
+function noteAppsInUse(files) {
+  try {
+    const at = JSON.parse(files?.['alive.json']?.content || '{}').aliveAt || 0;
+    if (spendingCoins && spendStartAt && at > spendStartAt) spendAliveAt = Math.max(spendAliveAt, Math.min(at, Date.now()));
+  } catch (_) {}
+}
+
 // Per-task-id merge, shared by every queue-ish array (tasks/bigTasks/dailyDefs/
 // shelvedTasks/heldTasks/timeHeldTasks/done). A task id present on both sides keeps
 // whichever copy has the newer per-task `_mtime` stamp (see pushTop() and the mutation
@@ -3627,6 +3637,7 @@ async function loadFromCloud() {
     const content = gist.files?.['timer_data.json']?.content;
     if (content) {
       applyCloudPayload(content);
+      noteAppsInUse(gist.files);
     } else {
       console.warn('Gist found but timer_data.json missing', gist.files);
     }
@@ -3656,10 +3667,12 @@ async function pushToCloud() {
       const latest = await fetch(`https://api.github.com/gists/${cloudGistId}`, {
         headers: { Authorization: `token ${cloudToken}`, Accept: 'application/vnd.github+json' }
       });
-      const raw = latest.ok ? (await latest.json()).files?.['timer_data.json']?.content : null;
+      const files = latest.ok ? (await latest.json()).files : null;
+      const raw = files?.['timer_data.json']?.content;
       if (raw) {
         const d = JSON.parse(raw);
         noteCloudAlive(d);
+        noteAppsInUse(files);
         if ((d.tasksTs || 0) > tasksTs) cloudQueue = d;
         if ((d.cookTs || 0) > cookTs) cloudCook = d;
         // applyCloudCoins() merges deltas and is a no-op when nothing's actually new, so it's
@@ -3794,6 +3807,7 @@ async function pollCloud() {
         setChip('ok', '☁ 已同步');
       }
     }
+    noteAppsInUse(gist.files);  // before cloudFresh lets spendTick charge the minutes since
   } catch(e) {
   } finally {
     cloudFresh = true;  // even on failure: offline shouldn't freeze 消耗 forever

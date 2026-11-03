@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v166</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v167</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -759,10 +759,10 @@ const COOK_UNLOCK_KEY = '炒菜准备';
 const COOK_GRACE_MS   = 10 * 60000;
 let cookFreeUntil = 0;
 let cookTs        = 0;   // when this device last changed cookFreeUntil; the newest change wins across devices
-// 19:00–20:30 (device local time) is free: 消耗 can start at any balance and charges nothing.
-// On Fri/Sat nights the window runs from 19:00 all the way to midnight instead.
-const FREE_WINDOW = [19 * 60, 20 * 60 + 30];
-const FREE_WINDOW_WEEKEND_START = 19 * 60;
+// 20:00–21:30 (device local time) is free: 消耗 can start at any balance and charges nothing.
+// On Fri/Sat nights the window runs from 20:00 all the way to midnight instead.
+const FREE_WINDOW = [20 * 60, 21 * 60 + 30];
+const FREE_WINDOW_WEEKEND_START = 20 * 60;
 function isFreeTime(ms = Date.now()) {
   const d = new Date(ms), m = d.getHours() * 60 + d.getMinutes();
   const day = d.getDay();  // 5 = Friday, 6 = Saturday
@@ -2033,7 +2033,7 @@ function updateStats() {
   freeBadge.hidden = !freeNow;
   if (freeNow) {
     const day = new Date().getDay();
-    freeBadge.textContent = '🎁 免费时间' + ((day === 5 || day === 6) ? ' · 到 24:00' : ' · 到 20:30');
+    freeBadge.textContent = '🎁 免费时间' + ((day === 5 || day === 6) ? ' · 到 24:00' : ' · 到 21:30');
   }
   document.getElementById('statCoins').textContent    = coinsToday;
   const spendRate = SPEND_RATE[spendDifficulty] || 1;
@@ -2273,14 +2273,14 @@ function convertToSpend() {
 // Timestamp-based, not a plain counter — mobile browsers throttle/suspend
 // setInterval while the app is backgrounded, so we recompute from wall-clock
 // elapsed time (matches tick()'s approach) instead of trusting tick counts.
-// ── Night check-in: from 20:30, every 30 min of 消耗 asks 还在玩吗？ ──
+// ── Night check-in: from 21:30, every 30 min of 消耗 asks 还在玩吗？ ──
 // Unanswered for 5 min → stop 消耗 and refund everything charged since the last 继续,
 // so falling asleep with 消耗 on doesn't drain the balance overnight.
 const CHECKIN_EVERY_MIN = 30;
 const CHECKIN_WAIT_MIN  = 5;
 let checkinBeep = null;
 
-// Minutes after midnight when that day's free time ends: 20:30, or midnight on Fri/Sat.
+// Minutes after midnight when that day's free time ends: 21:30, or midnight on Fri/Sat.
 function freeEndMinutes(d) {
   const day = d.getDay();
   return (day === 5 || day === 6) ? 24 * 60 : FREE_WINDOW[1];

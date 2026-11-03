@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v165</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v166</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -1467,8 +1467,24 @@ function dailyRollover() {
 }
 
 // Sync immediately when tab becomes visible again; also check for day rollover
+// A page left open (the iPhone app keeps it for days) never picks up a new deploy by itself.
+// On every return, load the new version if there is one, unless a task is mid-countdown
+// (the running countdown isn't restored by a reload; 消耗 and everything else is).
+async function reloadIfNewVersion() {
+  if (running) return;
+  try {
+    const html = await (await fetch(location.pathname + '?vcheck=' + Date.now(), { cache: 'no-store' })).text();
+    const latest = html.match(/class="app-version">(v\d+)</)?.[1];
+    const mine = document.querySelector('.app-version')?.textContent;
+    if (!latest || !mine || latest === mine || running) return;
+    saveLocal();
+    location.replace(location.pathname + '?' + latest);  // a new URL, so no cached copy of the old page
+  } catch (_) {}
+}
+
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { window.__markStale(); return; }
+  reloadIfNewVersion();
   if (todayStr() !== lastDay) {
     dailyRollover();
   }
@@ -2345,7 +2361,12 @@ function autoStopSpend() {
 // 停止: on the phone the page sleeps while 红果 is watched, so those minutes are still pending
 // when it's reopened, and stopping first used to drop them all.
 function chargeDueSpend() {
-  const elapsedMin = Math.floor((Date.now() - spendStartAt) / 60000);
+  // Only minutes someone is known to have been around for get settled (charged, or free).
+  // Later ones stay pending rather than being written off: a tick that runs right after a
+  // wake, before the pull brings in the phone's alive.json, would otherwise forfeit them for
+  // good. Whatever is still uncovered when the session ends really was unattended.
+  const coveredMin = Math.ceil((spendAliveAt + UNATTENDED_GRACE_MS - spendStartAt) / 60000);
+  const elapsedMin = Math.min(Math.floor((Date.now() - spendStartAt) / 60000), coveredMin);
   const due = elapsedMin - spendDeducted;
   if (due > 0) {
     // Keep deducting past 0 instead of stopping dead — the escalating overdraft alarm
@@ -2357,7 +2378,7 @@ function chargeDueSpend() {
     // either: with every device asleep nobody was using anything.
     for (let m = spendDeducted + 1; m <= elapsedMin; m++) {
       const minuteStart = spendStartAt + (m - 1) * 60000;
-      if (isFreeTime(minuteStart) || minuteStart >= spendAliveAt + UNATTENDED_GRACE_MS) continue;
+      if (isFreeTime(minuteStart)) continue;
       coins -= rate;
       coinsToday = Math.max(0, coinsToday - rate);
       spendGross += rate;
@@ -3328,7 +3349,7 @@ function noteWake() {
   lastWakeCheck = now;
 }
 setInterval(noteWake, 5000);
-window.__resume    = () => { if (cloudReady) pollCloud(); };          // called by the iOS app on foreground
+window.__resume    = () => { if (cloudReady) pollCloud(); reloadIfNewVersion(); };          // called by the iOS app on foreground
 
 const syncChip = document.getElementById('syncChip');
 const cloudCfg = document.getElementById('cloudCfg');

@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v164</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v165</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -748,6 +748,7 @@ const SPEND_DEPLETION_STOP_MIN  = 30;           // minutes into overdraft to aut
 let spendLastHeartbeat = 0;  // last time spendTick() force-pushed just to keep spendTs fresh (see spendTick)
 let spendConfirmedAt    = 0;  // last time someone answered 继续 to the night check-in (0 = not yet this session)
 let spendGrossAtConfirm = 0;  // spendGross at that moment; what's charged after it gets refunded if the next check-in goes unanswered
+let stopAfterSync = false;  // 停止 pressed while the page was still pulling after a wake: stop once it has
 let spendAliveAt  = 0;   // last moment some device was actively running this 消耗 session (synced); minutes after it + grace aren't charged
 const UNATTENDED_GRACE_MS = 3 * 60000;
 let spendStateTs  = 0;   // ms timestamp of the last local 消耗 start/stop; lets other devices adopt it without a stale pull undoing it
@@ -2130,6 +2131,11 @@ function applyCloudSteps(d) {
 }
 function toggleSpendCoins() {
   if (spendingCoins) {
+    // Settle the pending minutes first, which needs the cloud's latest alive.json / charges.
+    if (!cloudFresh) { stopAfterSync = true; setChip('syncing', '↻ 结算中…'); return; }
+    stopAfterSync = false;
+    if (spendStartAt && !checkSpendCheckin()) chargeDueSpend();
+    if (!spendingCoins) return;  // an unanswered check-in just ended it (with its refund)
     showSpendSummary();
     clearInterval(spendInterval); spendInterval = null;
     spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
@@ -2160,6 +2166,7 @@ function showSpendSummary() {
 
 function startSpendCoins() {
   if (spendingCoins) return;
+  stopAfterSync = false;
   if (coins < COIN_PLAY_MIN && !isFreeTime()) { alert('金币不足，不可以启动游戏！！！'); return false; }
   ensureAudioCtx();  // unlock audio now, on this user gesture, so the later un-gestured alarm can actually play
   spendingCoins   = true;
@@ -2334,14 +2341,10 @@ function autoStopSpend() {
   if (cloudReady) pushToCloud();
 }
 
-function spendTick() {
-  if (!spendingCoins || !spendStartAt) return;
-  noteWake();  // may run before the 5 s wake check after a computer sleep
-  // Just woke up: first learn whether another device already stopped this session or
-  // charged these minutes — otherwise a sleeping device re-charges hours at once.
-  if (!cloudFresh) return;
-  // An unanswered check-in ends the session before anything else gets charged.
-  if (checkSpendCheckin()) return;
+// Charges every minute of the session not charged yet (see spendTick). Also run right before
+// 停止: on the phone the page sleeps while 红果 is watched, so those minutes are still pending
+// when it's reopened, and stopping first used to drop them all.
+function chargeDueSpend() {
   const elapsedMin = Math.floor((Date.now() - spendStartAt) / 60000);
   const due = elapsedMin - spendDeducted;
   if (due > 0) {
@@ -2370,6 +2373,18 @@ function spendTick() {
     // own to blow through GitHub's 100/hour gist-write limit during a single long 消耗 session.
     spendLastHeartbeat = Date.now();
   }
+}
+
+function spendTick() {
+  if (!spendingCoins || !spendStartAt) return;
+  noteWake();  // may run before the 5 s wake check after a computer sleep
+  // Just woke up: first learn whether another device already stopped this session or
+  // charged these minutes — otherwise a sleeping device re-charges hours at once.
+  if (!cloudFresh) return;
+  // An unanswered check-in ends the session before anything else gets charged.
+  if (checkSpendCheckin()) return;
+  if (stopAfterSync) { toggleSpendCoins(); return; }  // 停止 pressed before the pull finished
+  chargeDueSpend();
   spendAliveAt = Date.now();
   if (coins <= 0) {
     if (!spendAlarmFired) {

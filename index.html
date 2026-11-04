@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v167</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v168</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -1192,11 +1192,11 @@ function dedupeDailyInstances() {
 // (4+ options) becomes 大循环 instead — idempotent, so safe to leave running on every load.
 // Converted tasks join bigTasks (dormant, same as any newly-created big task) rather than
 // staying wherever they were, since that's what 大循环 actually means everywhere else.
-// Keeps 小循环/大循环 in sync with segment count both ways: >3 segments promotes to big,
-// and dropping back to <=3 later demotes it again — but only for a task THIS function
-// promoted (_segAutoPromoted), never a task that's big for its own unrelated reason, or one
-// where the user explicitly re-picked 大循环 themselves (saveModal clears the flag on any
-// manual type change, which is what makes that override stick).
+// This used to also auto-demote a converted task back to 小循环 the moment its segment count
+// dropped back to <=3 (e.g. after completing/removing a segment) — removed on request: once
+// something becomes 大循环 it should stay 大循环 unless a person changes it by hand in the
+// edit modal. _segAutoPromoted is kept (still cleared by an explicit manual type change in
+// saveModal) only so a stray leftover value from before this change doesn't do anything.
 function migrateLongSegmentsToBig() {
   let changed = false;
   const tooLong = t => t.name.split('/').length > 3;
@@ -1206,17 +1206,6 @@ function migrateLongSegmentsToBig() {
     t._segAutoPromoted = true;
     if (!t.trigEvery || t.trigEvery < 1) t.trigEvery = 20;
     bigTasks.push(t);
-    if (cur && cur.id === t.id) { clearInterval(ticker); running = false; overSecs = 0; cur = null; }
-    changed = true;
-  };
-  const demote = t => {
-    t.type = 'small';
-    delete t._segAutoPromoted;
-    delete t.trigEvery;
-    if (!taskActiveToday(t)) dayHeldTasks.push(t);
-    else if (!tagsVisible(t.tags, locState)) heldTasks.push(t);
-    else if (!timeSlotVisible(t.timeSlot)) timeHeldTasks.push(t);
-    else tasks.push(t);
     if (cur && cur.id === t.id) { clearInterval(ticker); running = false; overSecs = 0; cur = null; }
     changed = true;
   };
@@ -1231,17 +1220,6 @@ function migrateLongSegmentsToBig() {
   dayHeldTasks  = promoteSweep(dayHeldTasks);
   shelvedTasks  = promoteSweep(shelvedTasks);
   skippedTasks  = skippedTasks.filter(s => { if (s.task.type === 'small' && tooLong(s.task)) { promote(s.task); return false; } return true; });
-
-  const demoteSweep = arr => arr.filter(t => {
-    if (t.type === 'big' && t._segAutoPromoted && !t._segUserOverride && !tooLong(t)) { demote(t); return false; }
-    return true;
-  });
-  bigTasks      = demoteSweep(bigTasks);
-  tasks         = demoteSweep(tasks);
-  heldTasks     = demoteSweep(heldTasks);
-  timeHeldTasks = demoteSweep(timeHeldTasks);
-  dayHeldTasks  = demoteSweep(dayHeldTasks);
-  shelvedTasks  = demoteSweep(shelvedTasks);
 
   return changed;
 }
@@ -3267,8 +3245,8 @@ function saveModal() {
         renderDaily();
       }
       // FROM big: it's sitting dormant in bigTasks, not in any of the normal queue
-      // arrays — pull it out and place it like migrateLongSegmentsToBig()'s demote()
-      // does, since it's no longer waiting on the small-cycle trigger.
+      // arrays — pull it out and place it like a normal small/once/daily task would be,
+      // since it's no longer waiting on the small-cycle trigger.
       if (oldType === 'big') {
         bigTasks = bigTasks.filter(t => t.id !== task.id);
         delete task.trigEvery;

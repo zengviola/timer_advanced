@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v168</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v169</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -748,7 +748,8 @@ const SPEND_DEPLETION_STOP_MIN  = 30;           // minutes into overdraft to aut
 let spendLastHeartbeat = 0;  // last time spendTick() force-pushed just to keep spendTs fresh (see spendTick)
 let spendConfirmedAt    = 0;  // last time someone answered 继续 to the night check-in (0 = not yet this session)
 let spendGrossAtConfirm = 0;  // spendGross at that moment; what's charged after it gets refunded if the next check-in goes unanswered
-let stopAfterSync = false;  // 停止 pressed while the page was still pulling after a wake: stop once it has
+let stopAfterSync = 0;  // when 停止 was pressed while the page was still pulling after a wake: stop once it has
+const STOP_SYNC_WAIT_MS = 8000;  // …or after this long regardless, settling with what this device knows
 let spendAliveAt  = 0;   // last moment some device was actively running this 消耗 session (synced); minutes after it + grace aren't charged
 const UNATTENDED_GRACE_MS = 3 * 60000;
 let spendStateTs  = 0;   // ms timestamp of the last local 消耗 start/stop; lets other devices adopt it without a stale pull undoing it
@@ -2126,8 +2127,13 @@ function applyCloudSteps(d) {
 function toggleSpendCoins() {
   if (spendingCoins) {
     // Settle the pending minutes first, which needs the cloud's latest alive.json / charges.
-    if (!cloudFresh) { stopAfterSync = true; setChip('syncing', '↻ 结算中…'); return; }
-    stopAfterSync = false;
+    if (!cloudFresh && !(stopAfterSync && Date.now() - stopAfterSync >= STOP_SYNC_WAIT_MS)) {
+      if (!stopAfterSync) stopAfterSync = Date.now();
+      setChip('syncing', '↻ 结算中…');
+      if (cloudReady) pollCloud();
+      return;
+    }
+    stopAfterSync = 0;
     if (spendStartAt && !checkSpendCheckin()) chargeDueSpend();
     if (!spendingCoins) return;  // an unanswered check-in just ended it (with its refund)
     showSpendSummary();
@@ -2160,7 +2166,7 @@ function showSpendSummary() {
 
 function startSpendCoins() {
   if (spendingCoins) return;
-  stopAfterSync = false;
+  stopAfterSync = 0;
   if (coins < COIN_PLAY_MIN && !isFreeTime()) { alert('金币不足，不可以启动游戏！！！'); return false; }
   ensureAudioCtx();  // unlock audio now, on this user gesture, so the later un-gestured alarm can actually play
   spendingCoins   = true;
@@ -2379,7 +2385,10 @@ function spendTick() {
   noteWake();  // may run before the 5 s wake check after a computer sleep
   // Just woke up: first learn whether another device already stopped this session or
   // charged these minutes — otherwise a sleeping device re-charges hours at once.
-  if (!cloudFresh) return;
+  if (!cloudFresh) {
+    if (stopAfterSync && Date.now() - stopAfterSync >= STOP_SYNC_WAIT_MS) toggleSpendCoins();
+    return;
+  }
   // An unanswered check-in ends the session before anything else gets charged.
   if (checkSpendCheckin()) return;
   if (stopAfterSync) { toggleSpendCoins(); return; }  // 停止 pressed before the pull finished
@@ -3612,13 +3621,19 @@ function applyCloudSpend(d, tookCoins) {
   }
 }
 
+// A request made around an iOS suspend can hang with no error; 停止 and every 消耗 charge
+// wait for these pulls to settle, so they must give up instead of waiting forever.
+function gistGet(url) {
+  const ctl = new AbortController();
+  setTimeout(() => ctl.abort(), 15000);
+  return fetch(url, { headers: { Authorization: `token ${cloudToken}`, Accept: 'application/vnd.github+json' }, signal: ctl.signal });
+}
+
 async function findGistId() {
   // Search all user gists for ours by description
   let page = 1;
   while (page <= 5) {
-    const res = await fetch(`https://api.github.com/gists?per_page=100&page=${page}`, {
-      headers: { Authorization: `token ${cloudToken}`, Accept: 'application/vnd.github+json' }
-    });
+    const res = await gistGet(`https://api.github.com/gists?per_page=100&page=${page}`);
     if (!res.ok) throw new Error(res.status);
     const list = await res.json();
     if (!list.length) break;
@@ -3643,9 +3658,7 @@ async function loadFromCloud() {
     }
     cloudGistId = id;
     localStorage.setItem('tt_cloud_gist', cloudGistId);
-    const res = await fetch(`https://api.github.com/gists/${cloudGistId}`, {
-      headers: { Authorization: `token ${cloudToken}`, Accept: 'application/vnd.github+json' }
-    });
+    const res = await gistGet(`https://api.github.com/gists/${cloudGistId}`);
     if (!res.ok) throw new Error(res.status);
     const gist = await res.json();
     const content = gist.files?.['timer_data.json']?.content;
@@ -3678,9 +3691,7 @@ async function pushToCloud() {
   let cloudCook  = null;  // cloud's 炒菜准备 unlock, when another device changed it more recently
   if (cloudGistId) {
     try {
-      const latest = await fetch(`https://api.github.com/gists/${cloudGistId}`, {
-        headers: { Authorization: `token ${cloudToken}`, Accept: 'application/vnd.github+json' }
-      });
+      const latest = await gistGet(`https://api.github.com/gists/${cloudGistId}`);
       const files = latest.ok ? (await latest.json()).files : null;
       const raw = files?.['timer_data.json']?.content;
       if (raw) {
@@ -3783,9 +3794,7 @@ function executeCmd(cmd) {
 async function pollCloud() {
   try {
     if (!cloudToken || !cloudGistId) return;
-    const res = await fetch(`https://api.github.com/gists/${cloudGistId}`, {
-      headers: { Authorization: `token ${cloudToken}`, Accept: 'application/vnd.github+json' }
-    });
+    const res = await gistGet(`https://api.github.com/gists/${cloudGistId}`);
     if (!res.ok) return;
     const gist = await res.json();
     const cmdRaw = gist.files?.['timer_cmd.json']?.content;

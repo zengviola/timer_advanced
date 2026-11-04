@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v173</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v174</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -1347,6 +1347,34 @@ function dedupeTaskIds() {
   timeHeldTasks = dedupe(timeHeldTasks);
   dayHeldTasks  = dedupe(dayHeldTasks);
   done          = dedupe(done);
+}
+
+// A daily task's queue instance and its completed-today copy in `done` have different ids
+// (doComplete() shifts the instance out of `tasks` and unshifts a *separate* { ...t,
+// doneDate } copy into `done`), so mergeTaskQueue()'s per-array "never drop an id present on
+// only one side" rule can't tell they're the same day's completion — a device that completed
+// a daily task today merges its `done` copy in, while another device that hadn't synced yet
+// still has its own un-completed instance surviving in `tasks`, and both pass through clean.
+// Net effect: the same daily task shows up both pending in the queue AND done today (and,
+// if two devices each independently completed it, twice in `done`). Clean that up here: once
+// any one copy says "done today", every other copy of that dailyId collapses onto it.
+function dedupeDailyAcrossDone() {
+  const today = todayStr();
+  // Keep whichever copy has the newer _mtime, not just the first one encountered.
+  const bestByDailyId = new Map();
+  done.forEach(t => {
+    if (t.type !== 'daily' || t.doneDate !== today) return;
+    const prev = bestByDailyId.get(t.dailyId);
+    if (!prev || (t._mtime || 0) > (prev._mtime || 0)) bestByDailyId.set(t.dailyId, t);
+  });
+  done = done.filter(t => t.type !== 'daily' || t.doneDate !== today || bestByDailyId.get(t.dailyId) === t);
+  const completedIds = new Set(bestByDailyId.keys());
+  dailyDefs.forEach(d => { if (d.lastCompleted === today) completedIds.add(d.id); });
+  const strip = arr => arr.filter(t => !(t.type === 'daily' && completedIds.has(t.dailyId)));
+  tasks         = strip(tasks);
+  heldTasks     = strip(heldTasks);
+  timeHeldTasks = strip(timeHeldTasks);
+  dayHeldTasks  = strip(dayHeldTasks);
 }
 
 // Inject a daily def into the active queue (if not already there and not done today)
@@ -3661,6 +3689,7 @@ function applyCloudPayload(raw) {
     migrateAllTags();
     dedupeDailyInstances();
     dedupeTaskIds();
+    dedupeDailyAcrossDone();
     backfillAllSegCountsTotal();
     reconcileLocVisibility();
     reconcileTimeVisibility();
@@ -4012,6 +4041,7 @@ function initCloud() {
 load();
 dedupeDailyInstances();
 dedupeTaskIds();
+dedupeDailyAcrossDone();
 backfillAllSegCountsTotal();
 renderSpendDifficultyToggle();
 if (todayStr() !== lastDay) dailyRollover();  // catch up if the app was closed across midnight

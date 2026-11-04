@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v171</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v172</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -3293,23 +3293,26 @@ function saveModal() {
       // re-check now so a restriction change takes effect on Save, not up to a minute after
       if (dTask.type === 'daily') checkDailyTasks();
     }
-    // Apply tag / time-of-day change
-    if (editingSrc === 'queue') {
-      task.tags = modalTags.length > 0 ? modalTags.slice() : undefined;
-      if (!task.tags) delete task.tags;
-      task.timeSlot = modalTimeSlot || undefined;
-      if (!task.timeSlot) delete task.timeSlot;
-      // A daily instance is rebuilt from scratch every time it's (re-)injected — without
-      // this, tags/timeSlot set here would silently vanish the next time that happens
-      // (next day, or any self-heal cycle), same gap 出现的日子 already had to work around.
-      if (task.type === 'daily' && task.dailyId !== undefined) {
-        const def = dailyDefs.find(d => d.id === task.dailyId);
-        if (def) {
-          if (task.tags) def.tags = task.tags.slice(); else delete def.tags;
-          if (task.timeSlot) def.timeSlot = task.timeSlot; else delete def.timeSlot;
-          if (task.description) def.description = task.description; else delete def.description;
-        }
+    // Apply tag / time-of-day change — the modal shows these controls no matter which list
+    // you opened it from (queue/大循环/日常/已完成), but this used to only write them back
+    // when editingSrc === 'queue', so setting 标签/出现的时间 from any other list silently
+    // did nothing on Save.
+    task.tags = modalTags.length > 0 ? modalTags.slice() : undefined;
+    if (!task.tags) delete task.tags;
+    task.timeSlot = modalTimeSlot || undefined;
+    if (!task.timeSlot) delete task.timeSlot;
+    // A daily instance is rebuilt from scratch every time it's (re-)injected — without
+    // this, tags/timeSlot set here would silently vanish the next time that happens
+    // (next day, or any self-heal cycle), same gap 出现的日子 already had to work around.
+    if (task.type === 'daily' && task.dailyId !== undefined) {
+      const def = dailyDefs.find(d => d.id === task.dailyId);
+      if (def) {
+        if (task.tags) def.tags = task.tags.slice(); else delete def.tags;
+        if (task.timeSlot) def.timeSlot = task.timeSlot; else delete def.timeSlot;
+        if (task.description) def.description = task.description; else delete def.description;
       }
+    }
+    if (editingSrc === 'queue') {
       // If the new tags/time no longer match right now, pull out of queue into the
       // matching held array (whichever check actually failed)
       if (!tagsVisible(task.tags, locState) || !timeSlotVisible(task.timeSlot)) {
@@ -3375,7 +3378,15 @@ function saveModal() {
     if (oldType === 'daily' && newType === 'daily') {
       if (editingSrc === 'daily') {
         const qt = tasks.find(t => t.dailyId === editingId);
-        if (qt) { qt.duration = secs; if (newName) qt.name = newName; }
+        if (qt) {
+          qt.duration = secs; if (newName) qt.name = newName;
+          qt.tags = task.tags ? task.tags.slice() : undefined; if (!qt.tags) delete qt.tags;
+          qt.timeSlot = task.timeSlot || undefined; if (!qt.timeSlot) delete qt.timeSlot;
+          // Re-check now instead of waiting for the periodic sweep, same reason checkDailyTasks()
+          // is re-run right after a day-restriction change above.
+          reconcileLocVisibility();
+          reconcileTimeVisibility();
+        }
       } else {
         const def = dailyDefs.find(d => d.id === task.dailyId);
         if (def) { def.duration = secs; if (newName) def.name = newName; }

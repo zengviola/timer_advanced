@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v169</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v170</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -697,6 +697,144 @@
   </div>
 
 </div>
+<!-- Edit Time Modal -->
+<div id="editModal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box">
+    <div class="modal-title">修改任务</div>
+    <div class="fg">
+      <label class="fl">任务名称</label>
+      <input type="text" id="modalName" maxlength="60"
+        oninput="setModalNameSegs(this.value)"
+        onkeydown="if(event.key==='Escape')closeModal()">
+    </div>
+    <div class="fg">
+      <label class="fl">备注 <span style="color:var(--surf3);font-weight:400;text-transform:none">(可选)</span></label>
+      <input type="text" id="modalDesc" maxlength="200" autocomplete="off"
+        onkeydown="if(event.key==='Escape')closeModal()">
+    </div>
+    <div class="fg" id="modalSegRow" style="display:none">
+      <label class="fl">/ 分段顺序</label>
+      <div id="modalSegList"></div>
+    </div>
+    <div class="fg" id="modalTypeRow" style="display:none">
+      <label class="fl">类型</label>
+      <div class="type-toggle" id="modalTypeToggle">
+        <button class="type-btn" data-t="once"  onclick="setModalType('once')">一次性</button>
+        <button class="type-btn" data-t="small" onclick="setModalType('small')">小循环</button>
+        <button class="type-btn" data-t="big"   onclick="setModalType('big')">大循环</button>
+        <button class="type-btn" data-t="daily" onclick="setModalType('daily')">Daily</button>
+      </div>
+    </div>
+    <div class="fg">
+      <label class="fl">标签</label>
+      <div class="type-toggle" id="modalTagToggle">
+        <button class="type-btn" data-tag="" onclick="toggleModalTag('')">无</button>
+        <button class="type-btn" data-tag="家_上班" onclick="toggleModalTag('家_上班')">🏠 家_上班</button>
+        <button class="type-btn" data-tag="家_下班" onclick="toggleModalTag('家_下班')">🏠 家_下班</button>
+        <button class="type-btn" data-tag="工作" onclick="toggleModalTag('工作')">💼 工作</button>
+        <button class="type-btn" data-tag="出去玩" onclick="toggleModalTag('出去玩')">🎉 出去玩</button>
+      </div>
+    </div>
+    <div class="fg">
+      <label class="fl">出现的日子 <span style="color:var(--surf3);font-weight:400;text-transform:none">(不选 = 每天)</span></label>
+      <div style="display:flex;border-radius:8px;overflow:hidden;background:var(--surf2)" id="modalDayToggle">
+        <button class="day-btn" data-d="1" onclick="toggleModalDay(1)">一</button>
+        <button class="day-btn" data-d="2" onclick="toggleModalDay(2)">二</button>
+        <button class="day-btn" data-d="3" onclick="toggleModalDay(3)">三</button>
+        <button class="day-btn" data-d="4" onclick="toggleModalDay(4)">四</button>
+        <button class="day-btn" data-d="5" onclick="toggleModalDay(5)">五</button>
+        <button class="day-btn" data-d="6" onclick="toggleModalDay(6)">六</button>
+        <button class="day-btn" data-d="0" onclick="toggleModalDay(0)">日</button>
+      </div>
+    </div>
+    <div class="fg">
+      <label class="fl">出现的时间</label>
+      <div class="type-toggle" id="modalTimeSlotToggle">
+        <button class="type-btn" data-slot="" onclick="setModalTimeSlot('')">不限</button>
+        <button class="type-btn" data-slot="after" onclick="setModalTimeSlot('after')">18点以后</button>
+        <button class="type-btn" data-slot="其他" onclick="setModalTimeSlot('其他')">其他</button>
+      </div>
+      <select id="modalTimeSlotHour" style="display:none" onchange="setModalTimeSlot('after')"><option value="0">0点</option><option value="1">1点</option><option value="2">2点</option><option value="3">3点</option><option value="4">4点</option><option value="5">5点</option><option value="6">6点</option><option value="7">7点</option><option value="8">8点</option><option value="9">9点</option><option value="10">10点</option><option value="11">11点</option><option value="12">12点</option><option value="13">13点</option><option value="14">14点</option><option value="15">15点</option><option value="16">16点</option><option value="17">17点</option><option value="18" selected>18点</option><option value="19">19点</option><option value="20">20点</option><option value="21">21点</option><option value="22">22点</option><option value="23">23点</option></select>
+    </div>
+    <div class="fg" id="modalTrigRow" style="display:none">
+      <label class="fl">每 N 次小循环触发</label>
+      <input type="number" id="modalTrigN" min="1" max="999"
+        onkeydown="if(event.key==='Escape')closeModal()">
+    </div>
+    <div class="fg">
+      <label class="fl">时长（分钟）</label>
+      <input type="number" id="modalInput" min="1" max="999"
+        onkeydown="if(event.key==='Enter')saveModal();if(event.key==='Escape')closeModal()">
+    </div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal()">取消</button>
+      <button class="btn-save"   onclick="saveModal()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Coin Alarm Modal: stays up, sounding, until manually confirmed -->
+<div id="spendCheckinModal" class="modal-backdrop" style="display:none">
+  <div class="modal-box">
+    <div class="alarm-icon">⏰</div>
+    <div class="modal-title" style="text-align:center">还在玩吗？</div>
+    <div class="checkin-text"><b id="checkinCountdown">5:00</b> 内不点「继续」，就停止消耗，<br>并退回这段时间扣的 <b id="checkinRefund">0</b> 金币。</div>
+    <div class="modal-btns">
+      <button class="btn-muted" onclick="stopFromCheckin()">停止消耗</button>
+      <button class="btn-confirm-checkin" onclick="confirmCheckin()">继续</button>
+    </div>
+  </div>
+</div>
+
+<div id="checkinStoppedModal" class="modal-backdrop" style="display:none">
+  <div class="modal-box">
+    <div class="alarm-icon">🛑</div>
+    <div class="modal-title" style="text-align:center">已自动停止消耗</div>
+    <div class="checkin-text">没有点「继续」，已退回 <b id="checkinStoppedRefund">0</b> 金币。</div>
+    <div class="modal-btns">
+      <button class="btn-confirm-checkin" onclick="document.getElementById('checkinStoppedModal').style.display='none'">知道了</button>
+    </div>
+  </div>
+</div>
+
+<div id="spendSummaryModal" class="modal-backdrop" style="display:none">
+  <div class="modal-box">
+    <div class="alarm-icon">🪙</div>
+    <div class="modal-title" style="text-align:center">本次消耗总结</div>
+    <div class="checkin-text" style="text-align:left">
+      时长：<b id="spendSumMins">0</b> 分钟<br>
+      扣除：<b id="spendSumGross">0</b> 金币<br>
+      期间赚回：<b id="spendSumEarned">0</b> 金币<br>
+      余额：<b id="spendSumFrom">0</b> → <b id="spendSumTo">0</b>（净 <b id="spendSumNet">0</b>）
+    </div>
+    <div class="modal-btns">
+      <button class="btn-confirm-checkin" onclick="document.getElementById('spendSummaryModal').style.display='none'">知道了</button>
+    </div>
+  </div>
+</div>
+
+<div id="coinAlarmModal" class="modal-backdrop" style="display:none">
+  <div class="modal-box">
+    <div class="alarm-icon">🔔</div>
+    <div class="modal-title" style="text-align:center">金币已用完！</div>
+    <div class="modal-btns">
+      <button class="btn-confirm-alarm" onclick="confirmCoinAlarm()">知道了</button>
+    </div>
+  </div>
+</div>
+
+<!-- Brush Reminder Modal -->
+<div id="brushModal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)closeBrushReminder()">
+  <div class="modal-box">
+    <div class="modal-title">🪥 刷牙</div>
+    <div class="modal-task-name">今天刷牙了吗？</div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeBrushReminder()">取消</button>
+      <button class="btn-save" style="background:var(--small)" onclick="closeBrushReminder()">已完成</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const CIRC = 2 * Math.PI * 86;
 
@@ -3882,143 +4020,5 @@ if (spendingCoins && spendStartAt) { spendTick(); spendInterval = setInterval(sp
 renderSteps();
 initCloud();
 </script>
-
-<!-- Edit Time Modal -->
-<div id="editModal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)closeModal()">
-  <div class="modal-box">
-    <div class="modal-title">修改任务</div>
-    <div class="fg">
-      <label class="fl">任务名称</label>
-      <input type="text" id="modalName" maxlength="60"
-        oninput="setModalNameSegs(this.value)"
-        onkeydown="if(event.key==='Escape')closeModal()">
-    </div>
-    <div class="fg">
-      <label class="fl">备注 <span style="color:var(--surf3);font-weight:400;text-transform:none">(可选)</span></label>
-      <input type="text" id="modalDesc" maxlength="200" autocomplete="off"
-        onkeydown="if(event.key==='Escape')closeModal()">
-    </div>
-    <div class="fg" id="modalSegRow" style="display:none">
-      <label class="fl">/ 分段顺序</label>
-      <div id="modalSegList"></div>
-    </div>
-    <div class="fg" id="modalTypeRow" style="display:none">
-      <label class="fl">类型</label>
-      <div class="type-toggle" id="modalTypeToggle">
-        <button class="type-btn" data-t="once"  onclick="setModalType('once')">一次性</button>
-        <button class="type-btn" data-t="small" onclick="setModalType('small')">小循环</button>
-        <button class="type-btn" data-t="big"   onclick="setModalType('big')">大循环</button>
-        <button class="type-btn" data-t="daily" onclick="setModalType('daily')">Daily</button>
-      </div>
-    </div>
-    <div class="fg">
-      <label class="fl">标签</label>
-      <div class="type-toggle" id="modalTagToggle">
-        <button class="type-btn" data-tag="" onclick="toggleModalTag('')">无</button>
-        <button class="type-btn" data-tag="家_上班" onclick="toggleModalTag('家_上班')">🏠 家_上班</button>
-        <button class="type-btn" data-tag="家_下班" onclick="toggleModalTag('家_下班')">🏠 家_下班</button>
-        <button class="type-btn" data-tag="工作" onclick="toggleModalTag('工作')">💼 工作</button>
-        <button class="type-btn" data-tag="出去玩" onclick="toggleModalTag('出去玩')">🎉 出去玩</button>
-      </div>
-    </div>
-    <div class="fg">
-      <label class="fl">出现的日子 <span style="color:var(--surf3);font-weight:400;text-transform:none">(不选 = 每天)</span></label>
-      <div style="display:flex;border-radius:8px;overflow:hidden;background:var(--surf2)" id="modalDayToggle">
-        <button class="day-btn" data-d="1" onclick="toggleModalDay(1)">一</button>
-        <button class="day-btn" data-d="2" onclick="toggleModalDay(2)">二</button>
-        <button class="day-btn" data-d="3" onclick="toggleModalDay(3)">三</button>
-        <button class="day-btn" data-d="4" onclick="toggleModalDay(4)">四</button>
-        <button class="day-btn" data-d="5" onclick="toggleModalDay(5)">五</button>
-        <button class="day-btn" data-d="6" onclick="toggleModalDay(6)">六</button>
-        <button class="day-btn" data-d="0" onclick="toggleModalDay(0)">日</button>
-      </div>
-    </div>
-    <div class="fg">
-      <label class="fl">出现的时间</label>
-      <div class="type-toggle" id="modalTimeSlotToggle">
-        <button class="type-btn" data-slot="" onclick="setModalTimeSlot('')">不限</button>
-        <button class="type-btn" data-slot="after" onclick="setModalTimeSlot('after')">18点以后</button>
-        <button class="type-btn" data-slot="其他" onclick="setModalTimeSlot('其他')">其他</button>
-      </div>
-      <select id="modalTimeSlotHour" style="display:none" onchange="setModalTimeSlot('after')"><option value="0">0点</option><option value="1">1点</option><option value="2">2点</option><option value="3">3点</option><option value="4">4点</option><option value="5">5点</option><option value="6">6点</option><option value="7">7点</option><option value="8">8点</option><option value="9">9点</option><option value="10">10点</option><option value="11">11点</option><option value="12">12点</option><option value="13">13点</option><option value="14">14点</option><option value="15">15点</option><option value="16">16点</option><option value="17">17点</option><option value="18" selected>18点</option><option value="19">19点</option><option value="20">20点</option><option value="21">21点</option><option value="22">22点</option><option value="23">23点</option></select>
-    </div>
-    <div class="fg" id="modalTrigRow" style="display:none">
-      <label class="fl">每 N 次小循环触发</label>
-      <input type="number" id="modalTrigN" min="1" max="999"
-        onkeydown="if(event.key==='Escape')closeModal()">
-    </div>
-    <div class="fg">
-      <label class="fl">时长（分钟）</label>
-      <input type="number" id="modalInput" min="1" max="999"
-        onkeydown="if(event.key==='Enter')saveModal();if(event.key==='Escape')closeModal()">
-    </div>
-    <div class="modal-btns">
-      <button class="btn-cancel" onclick="closeModal()">取消</button>
-      <button class="btn-save"   onclick="saveModal()">保存</button>
-    </div>
-  </div>
-</div>
-
-<!-- Coin Alarm Modal: stays up, sounding, until manually confirmed -->
-<div id="spendCheckinModal" class="modal-backdrop" style="display:none">
-  <div class="modal-box">
-    <div class="alarm-icon">⏰</div>
-    <div class="modal-title" style="text-align:center">还在玩吗？</div>
-    <div class="checkin-text"><b id="checkinCountdown">5:00</b> 内不点「继续」，就停止消耗，<br>并退回这段时间扣的 <b id="checkinRefund">0</b> 金币。</div>
-    <div class="modal-btns">
-      <button class="btn-muted" onclick="stopFromCheckin()">停止消耗</button>
-      <button class="btn-confirm-checkin" onclick="confirmCheckin()">继续</button>
-    </div>
-  </div>
-</div>
-
-<div id="checkinStoppedModal" class="modal-backdrop" style="display:none">
-  <div class="modal-box">
-    <div class="alarm-icon">🛑</div>
-    <div class="modal-title" style="text-align:center">已自动停止消耗</div>
-    <div class="checkin-text">没有点「继续」，已退回 <b id="checkinStoppedRefund">0</b> 金币。</div>
-    <div class="modal-btns">
-      <button class="btn-confirm-checkin" onclick="document.getElementById('checkinStoppedModal').style.display='none'">知道了</button>
-    </div>
-  </div>
-</div>
-
-<div id="spendSummaryModal" class="modal-backdrop" style="display:none">
-  <div class="modal-box">
-    <div class="alarm-icon">🪙</div>
-    <div class="modal-title" style="text-align:center">本次消耗总结</div>
-    <div class="checkin-text" style="text-align:left">
-      时长：<b id="spendSumMins">0</b> 分钟<br>
-      扣除：<b id="spendSumGross">0</b> 金币<br>
-      期间赚回：<b id="spendSumEarned">0</b> 金币<br>
-      余额：<b id="spendSumFrom">0</b> → <b id="spendSumTo">0</b>（净 <b id="spendSumNet">0</b>）
-    </div>
-    <div class="modal-btns">
-      <button class="btn-confirm-checkin" onclick="document.getElementById('spendSummaryModal').style.display='none'">知道了</button>
-    </div>
-  </div>
-</div>
-
-<div id="coinAlarmModal" class="modal-backdrop" style="display:none">
-  <div class="modal-box">
-    <div class="alarm-icon">🔔</div>
-    <div class="modal-title" style="text-align:center">金币已用完！</div>
-    <div class="modal-btns">
-      <button class="btn-confirm-alarm" onclick="confirmCoinAlarm()">知道了</button>
-    </div>
-  </div>
-</div>
-
-<!-- Brush Reminder Modal -->
-<div id="brushModal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)closeBrushReminder()">
-  <div class="modal-box">
-    <div class="modal-title">🪥 刷牙</div>
-    <div class="modal-task-name">今天刷牙了吗？</div>
-    <div class="modal-btns">
-      <button class="btn-cancel" onclick="closeBrushReminder()">取消</button>
-      <button class="btn-save" style="background:var(--small)" onclick="closeBrushReminder()">已完成</button>
-    </div>
-  </div>
-</div>
 </body>
 </html>

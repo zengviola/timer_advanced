@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v172</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v173</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -1325,6 +1325,28 @@ function dedupeDailyInstances() {
   tasks         = dedupe(tasks);
   heldTasks     = dedupe(heldTasks);
   timeHeldTasks = dedupe(timeHeldTasks);
+}
+
+// One-time cleanup for duplicate ids that an old sync-merge bug could leave sitting in the
+// same array forever (mergeTaskQueue() dedupes going forward — see its comment — but that
+// doesn't retroactively clean up a dupe that already made it into local/cloud state).
+function dedupeTaskIds() {
+  const dedupe = arr => {
+    const byId = new Map();
+    for (const t of arr) {
+      const prev = byId.get(t.id);
+      byId.set(t.id, prev && (prev._mtime || 0) > (t._mtime || 0) ? prev : t);
+    }
+    return [...byId.values()];
+  };
+  tasks         = dedupe(tasks);
+  bigTasks      = dedupe(bigTasks);
+  dailyDefs     = dedupe(dailyDefs);
+  shelvedTasks  = dedupe(shelvedTasks);
+  heldTasks     = dedupe(heldTasks);
+  timeHeldTasks = dedupe(timeHeldTasks);
+  dayHeldTasks  = dedupe(dayHeldTasks);
+  done          = dedupe(done);
 }
 
 // Inject a daily def into the active queue (if not already there and not done today)
@@ -3544,13 +3566,27 @@ function noteAppsInUse(files) {
 function mergeTaskQueue(localList, remoteList, remoteNewer) {
   const baseList  = remoteNewer ? remoteList : localList;
   const otherList = remoteNewer ? localList  : remoteList;
-  const otherMap  = new Map(otherList.map(t => [t.id, t]));
-  const merged = baseList.map(baseTask => {
-    const other = otherMap.get(baseTask.id);
-    return other && (other._mtime || 0) > (baseTask._mtime || 0) ? other : baseTask;
+  // Collapse duplicate ids within each side first, keeping whichever copy has the newer
+  // _mtime — a dupe left over from an old bug (one array ending up with the same task
+  // pushed into it twice) would otherwise ride along through baseList.map() below and
+  // never get cleaned up, since nothing else here removes an id once it's duplicated.
+  const dedupe = list => {
+    const byId = new Map();
+    for (const t of list) {
+      const prev = byId.get(t.id);
+      byId.set(t.id, prev && (prev._mtime || 0) > (t._mtime || 0) ? prev : t);
+    }
+    return byId;
+  };
+  const baseMap  = dedupe(baseList);
+  const otherMap = dedupe(otherList);
+  const merged = [];
+  baseMap.forEach((baseTask, id) => {
+    const other = otherMap.get(id);
+    merged.push(other && (other._mtime || 0) > (baseTask._mtime || 0) ? other : baseTask);
   });
   const seen = new Set(merged.map(t => t.id));
-  otherList.forEach(t => { if (!seen.has(t.id)) merged.push(t); });
+  otherMap.forEach((t, id) => { if (!seen.has(id)) merged.push(t); });
   return merged;
 }
 
@@ -3624,6 +3660,7 @@ function applyCloudPayload(raw) {
     if (d.curId      !== undefined) _savedCurId  = d.curId;
     migrateAllTags();
     dedupeDailyInstances();
+    dedupeTaskIds();
     backfillAllSegCountsTotal();
     reconcileLocVisibility();
     reconcileTimeVisibility();
@@ -3974,6 +4011,7 @@ function initCloud() {
 // ── Init ──
 load();
 dedupeDailyInstances();
+dedupeTaskIds();
 backfillAllSegCountsTotal();
 renderSpendDifficultyToggle();
 if (todayStr() !== lastDay) dailyRollover();  // catch up if the app was closed across midnight

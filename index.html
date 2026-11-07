@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v174</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v175</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -1347,6 +1347,49 @@ function dedupeTaskIds() {
   timeHeldTasks = dedupe(timeHeldTasks);
   dayHeldTasks  = dedupe(dayHeldTasks);
   done          = dedupe(done);
+}
+
+// A task can also end up duplicated ACROSS different arrays, not just within one (which
+// dedupeTaskIds() above handles) — e.g. one device completes a 大循环 task (tasks -> bigTasks)
+// while another device hadn't synced yet and still has its own copy sitting in tasks;
+// mergeTaskQueue()'s per-array "never drop an id present on only one side" rule (see its
+// comment) then lets BOTH survive a sync, each in a different array. Nothing collapses them
+// afterward, so they keep diverging independently — each only recording the segment
+// completions that happen to occur on itself. That's how a segment someone has clearly done
+// can still show up as 0 in a CSV export: forEachExportableTask() reads whichever array-copy
+// its fixed scan order reaches first, which may not be the one that happened to record that
+// particular segment. Collapse every id's copies onto the newest-_mtime one, folding in
+// whatever the others recorded (via max per key, since these are independent counts that can
+// only grow — never summed, which would double-count whatever history they shared pre-split).
+function dedupeAcrossArrays() {
+  const arrays = [tasks, bigTasks, heldTasks, timeHeldTasks, dayHeldTasks, shelvedTasks];
+  const byId = new Map();
+  arrays.forEach(arr => arr.forEach(t => {
+    if (!byId.has(t.id)) byId.set(t.id, []);
+    byId.get(t.id).push(t);
+  }));
+  byId.forEach(copies => {
+    if (copies.length < 2) return;
+    copies.sort((a, b) => (b._mtime || 0) - (a._mtime || 0));
+    const primary = copies[0];
+    const mergedSegTotal = { ...(primary.segCountsTotal || {}) };
+    let mergedCount = primary.count || 0;
+    for (let i = 1; i < copies.length; i++) {
+      const other = copies[i];
+      mergedCount = Math.max(mergedCount, other.count || 0);
+      const otherTotal = other.segCountsTotal || {};
+      for (const seg in otherTotal) mergedSegTotal[seg] = Math.max(mergedSegTotal[seg] || 0, otherTotal[seg]);
+    }
+    primary.count = mergedCount;
+    if (Object.keys(mergedSegTotal).length > 0) primary.segCountsTotal = mergedSegTotal;
+    const dropped = copies.slice(1);
+    tasks         = tasks.filter(t => !dropped.includes(t));
+    bigTasks      = bigTasks.filter(t => !dropped.includes(t));
+    heldTasks     = heldTasks.filter(t => !dropped.includes(t));
+    timeHeldTasks = timeHeldTasks.filter(t => !dropped.includes(t));
+    dayHeldTasks  = dayHeldTasks.filter(t => !dropped.includes(t));
+    shelvedTasks  = shelvedTasks.filter(t => !dropped.includes(t));
+  });
 }
 
 // A daily task's queue instance and its completed-today copy in `done` have different ids
@@ -3689,6 +3732,7 @@ function applyCloudPayload(raw) {
     migrateAllTags();
     dedupeDailyInstances();
     dedupeTaskIds();
+    dedupeAcrossArrays();
     dedupeDailyAcrossDone();
     backfillAllSegCountsTotal();
     reconcileLocVisibility();
@@ -4041,6 +4085,7 @@ function initCloud() {
 load();
 dedupeDailyInstances();
 dedupeTaskIds();
+dedupeAcrossArrays();
 dedupeDailyAcrossDone();
 backfillAllSegCountsTotal();
 renderSpendDifficultyToggle();

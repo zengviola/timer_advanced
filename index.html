@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v176</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v177</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -604,7 +604,7 @@
     <div id="shelvedList"></div>
   </div>
 
-  <!-- Held by 出现的时间 (e.g. "其他" only shows before 18点) — otherwise these tasks are
+  <!-- Held by 出现的时间 (e.g. "N点以前" only shows before N点) — otherwise these tasks are
        still fully intact but invisible everywhere, which reads as "it disappeared". -->
   <div class="section" id="timeHeldSec" style="display:none">
     <div class="sec-head">
@@ -683,9 +683,10 @@
       <div class="type-toggle" id="timeSlotToggle">
         <button class="type-btn on on-once" data-slot="" onclick="setSelTimeSlot('')">不限</button>
         <button class="type-btn" data-slot="after" onclick="setSelTimeSlot('after')">18点以后</button>
-        <button class="type-btn" data-slot="其他" onclick="setSelTimeSlot('其他')">其他</button>
+        <button class="type-btn" data-slot="before" onclick="setSelTimeSlot('before')">18点以前</button>
       </div>
-      <select id="timeSlotHour" style="display:none" onchange="setSelTimeSlot('after')"><option value="0">0点</option><option value="1">1点</option><option value="2">2点</option><option value="3">3点</option><option value="4">4点</option><option value="5">5点</option><option value="6">6点</option><option value="7">7点</option><option value="8">8点</option><option value="9">9点</option><option value="10">10点</option><option value="11">11点</option><option value="12">12点</option><option value="13">13点</option><option value="14">14点</option><option value="15">15点</option><option value="16">16点</option><option value="17">17点</option><option value="18" selected>18点</option><option value="19">19点</option><option value="20">20点</option><option value="21">21点</option><option value="22">22点</option><option value="23">23点</option></select>
+      <select id="timeSlotHourAfter" style="display:none" onchange="setSelTimeSlot('after')"><option value="0">0点</option><option value="1">1点</option><option value="2">2点</option><option value="3">3点</option><option value="4">4点</option><option value="5">5点</option><option value="6">6点</option><option value="7">7点</option><option value="8">8点</option><option value="9">9点</option><option value="10">10点</option><option value="11">11点</option><option value="12">12点</option><option value="13">13点</option><option value="14">14点</option><option value="15">15点</option><option value="16">16点</option><option value="17">17点</option><option value="18" selected>18点</option><option value="19">19点</option><option value="20">20点</option><option value="21">21点</option><option value="22">22点</option><option value="23">23点</option></select>
+      <select id="timeSlotHourBefore" style="display:none" onchange="setSelTimeSlot('before')"><option value="0">0点</option><option value="1">1点</option><option value="2">2点</option><option value="3">3点</option><option value="4">4点</option><option value="5">5点</option><option value="6">6点</option><option value="7">7点</option><option value="8">8点</option><option value="9">9点</option><option value="10">10点</option><option value="11">11点</option><option value="12">12点</option><option value="13">13点</option><option value="14">14点</option><option value="15">15点</option><option value="16">16点</option><option value="17">17点</option><option value="18" selected>18点</option><option value="19">19点</option><option value="20">20点</option><option value="21">21点</option><option value="22">22点</option><option value="23">23点</option></select>
     </div>
 
     <!-- Big trigger config -->
@@ -759,9 +760,10 @@
       <div class="type-toggle" id="modalTimeSlotToggle">
         <button class="type-btn" data-slot="" onclick="setModalTimeSlot('')">不限</button>
         <button class="type-btn" data-slot="after" onclick="setModalTimeSlot('after')">18点以后</button>
-        <button class="type-btn" data-slot="其他" onclick="setModalTimeSlot('其他')">其他</button>
+        <button class="type-btn" data-slot="before" onclick="setModalTimeSlot('before')">18点以前</button>
       </div>
-      <select id="modalTimeSlotHour" style="display:none" onchange="setModalTimeSlot('after')"><option value="0">0点</option><option value="1">1点</option><option value="2">2点</option><option value="3">3点</option><option value="4">4点</option><option value="5">5点</option><option value="6">6点</option><option value="7">7点</option><option value="8">8点</option><option value="9">9点</option><option value="10">10点</option><option value="11">11点</option><option value="12">12点</option><option value="13">13点</option><option value="14">14点</option><option value="15">15点</option><option value="16">16点</option><option value="17">17点</option><option value="18" selected>18点</option><option value="19">19点</option><option value="20">20点</option><option value="21">21点</option><option value="22">22点</option><option value="23">23点</option></select>
+      <select id="modalTimeSlotHourAfter" style="display:none" onchange="setModalTimeSlot('after')"><option value="0">0点</option><option value="1">1点</option><option value="2">2点</option><option value="3">3点</option><option value="4">4点</option><option value="5">5点</option><option value="6">6点</option><option value="7">7点</option><option value="8">8点</option><option value="9">9点</option><option value="10">10点</option><option value="11">11点</option><option value="12">12点</option><option value="13">13点</option><option value="14">14点</option><option value="15">15点</option><option value="16">16点</option><option value="17">17点</option><option value="18" selected>18点</option><option value="19">19点</option><option value="20">20点</option><option value="21">21点</option><option value="22">22点</option><option value="23">23点</option></select>
+      <select id="modalTimeSlotHourBefore" style="display:none" onchange="setModalTimeSlot('before')"><option value="0">0点</option><option value="1">1点</option><option value="2">2点</option><option value="3">3点</option><option value="4">4点</option><option value="5">5点</option><option value="6">6点</option><option value="7">7点</option><option value="8">8点</option><option value="9">9点</option><option value="10">10点</option><option value="11">11点</option><option value="12">12点</option><option value="13">13点</option><option value="14">14点</option><option value="15">15点</option><option value="16">16点</option><option value="17">17点</option><option value="18" selected>18点</option><option value="19">19点</option><option value="20">20点</option><option value="21">21点</option><option value="22">22点</option><option value="23">23点</option></select>
     </div>
     <div class="fg" id="modalTrigRow" style="display:none">
       <label class="fl">每 N 次小循环触发</label>
@@ -974,32 +976,49 @@ function tagPills(tags) {
 }
 let selTags       = [];    // selected tags in add form (multi-select)
 let selDays       = [];    // selected days for add form ([] = every day)
-let selTimeSlot   = '';    // '' | 'N点以后' | '其他' — selected time-of-day restriction in add form (single-select)
+let selTimeSlot   = '';    // '' | 'N点以后' | 'N点以前' — selected time-of-day restriction in add form (single-select)
 
-// A task with no timeSlot always shows; 'N点以后' only shows from N:00 on, '其他' only before 18:00.
-// Legacy '6pm以后' (from before the hour was adjustable) is read as '18点以后'.
-function isEvening() { return new Date().getHours() >= 18; }
+// A task with no timeSlot always shows; 'N点以后' only shows from N:00 on, 'N点以前' only
+// shows before N:00. Legacy '6pm以后' (from before the hour was adjustable) is read as
+// '18点以后', and legacy '其他' (from before 以前 had its own adjustable hour) as '18点以前'.
 function slotAfterHour(slot) {
   if (slot === '6pm以后') return 18;
   const m = /^(\d{1,2})点以后$/.exec(slot || '');
   return m ? parseInt(m[1]) : null;
 }
+function slotBeforeHour(slot) {
+  if (slot === '其他') return 18;
+  const m = /^(\d{1,2})点以前$/.exec(slot || '');
+  return m ? parseInt(m[1]) : null;
+}
 function timeSlotVisible(slot) {
   if (!slot) return true;
-  const h = slotAfterHour(slot);
-  return h !== null ? new Date().getHours() >= h : !isEvening();
+  const afterH = slotAfterHour(slot);
+  if (afterH !== null) return new Date().getHours() >= afterH;
+  const beforeH = slotBeforeHour(slot);
+  if (beforeH !== null) return new Date().getHours() < beforeH;
+  return true;
 }
-// Shared by the add form and the edit modal: 'after' means "N点以后" with N from the hour dropdown.
-function applyTimeSlotToggle(toggleId, hourSelId, slot) {
-  const sel = document.getElementById(hourSelId);
-  if (slot === 'after') slot = `${sel.value}点以后`;
-  const h = slotAfterHour(slot);
-  if (h !== null) { sel.value = h; slot = `${h}点以后`; }
-  sel.style.display = h !== null ? '' : 'none';
+// Shared by the add form and the edit modal: 'after'/'before' mean "N点以后"/"N点以前" with
+// N from their respective hour dropdowns.
+function applyTimeSlotToggle(toggleId, afterSelId, beforeSelId, slot) {
+  const afterSel  = document.getElementById(afterSelId);
+  const beforeSel = document.getElementById(beforeSelId);
+  if (slot === 'after')  slot = `${afterSel.value}点以后`;
+  if (slot === 'before') slot = `${beforeSel.value}点以前`;
+  const afterH  = slotAfterHour(slot);
+  const beforeH = slotBeforeHour(slot);
+  if (afterH  !== null) { afterSel.value  = afterH;  slot = `${afterH}点以后`; }
+  if (beforeH !== null) { beforeSel.value = beforeH; slot = `${beforeH}点以前`; }
+  afterSel.style.display  = afterH  !== null ? '' : 'none';
+  beforeSel.style.display = beforeH !== null ? '' : 'none';
   document.querySelectorAll(`#${toggleId} .type-btn`).forEach(b => {
-    const on = b.dataset.slot === 'after' ? h !== null : b.dataset.slot === slot;
+    const on = b.dataset.slot === 'after'  ? afterH  !== null
+             : b.dataset.slot === 'before' ? beforeH !== null
+             : b.dataset.slot === slot;
     b.className = 'type-btn' + (on ? ' on on-once' : '');
-    if (b.dataset.slot === 'after') b.textContent = `${sel.value}点以后`;
+    if (b.dataset.slot === 'after')  b.textContent = `${afterSel.value}点以后`;
+    if (b.dataset.slot === 'before') b.textContent = `${beforeSel.value}点以前`;
   });
   return slot;
 }
@@ -2077,7 +2096,7 @@ function restoreAllTimeHeld() {
 }
 
 // Renders whatever's currently sitting in timeHeldTasks — without this, a task held by its
-// 出现的时间 restriction (e.g. "其他" only shows before 18点) is fully intact in the data but
+// 出现的时间 restriction (e.g. "N点以前" only shows before N点) is fully intact in the data but
 // invisible everywhere in the UI, indistinguishable from actually having been deleted.
 function renderTimeHeld() {
   if (timeHeldTasks.length === 0) { timeHeldSec.style.display = 'none'; return; }
@@ -3054,7 +3073,7 @@ function toggleSelDay(d) {
   });
 }
 function setSelTimeSlot(slot) {
-  selTimeSlot = applyTimeSlotToggle('timeSlotToggle', 'timeSlotHour', slot);
+  selTimeSlot = applyTimeSlotToggle('timeSlotToggle', 'timeSlotHourAfter', 'timeSlotHourBefore', slot);
 }
 function renderSpendDifficultyToggle() {
   document.querySelectorAll('#spendDifficultyToggle .type-btn').forEach(b => {
@@ -3368,7 +3387,7 @@ function setModalDays(days) {
   });
 }
 function setModalTimeSlot(slot) {
-  modalTimeSlot = applyTimeSlotToggle('modalTimeSlotToggle', 'modalTimeSlotHour', slot || '');
+  modalTimeSlot = applyTimeSlotToggle('modalTimeSlotToggle', 'modalTimeSlotHourAfter', 'modalTimeSlotHourBefore', slot || '');
 }
 
 function setModalNameSegs(name) {

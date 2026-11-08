@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v175</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v176</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -490,6 +490,13 @@
     <div class="steps-auto" id="stepsAuto" style="display:none">👟 iPhone 今日 <b id="stepsSeenDisp">0</b> 步 · 已自动兑换 <b id="stepsCreditedDisp">0</b> 步</div>
     <button class="steps-log-toggle" onclick="toggleStepsLog()">兑换记录<span id="stepsLogCount"></span> ▾</button>
     <div class="steps-log" id="stepsLog" style="display:none"></div>
+    <div class="steps-row">
+      <span class="fl">外卖花费</span>
+      <span class="steps-hint">花多少钱就扣多少金币</span>
+      <button class="btn-exchange-steps" style="background:var(--danger)" onclick="recordTakeoutSpend()">扣除</button>
+    </div>
+    <button class="steps-log-toggle" onclick="toggleTakeoutLog()">扣费记录<span id="takeoutLogCount"></span> ▾</button>
+    <div class="steps-log" id="takeoutLog" style="display:none"></div>
     <div class="coin-spend-detail" id="coinSpendDetail" style="display:none">
       <span>开始 <b id="spendStartDisp">0</b></span>
       <span>共可消耗 <b id="spendTotalDisp">00:00</b></span>
@@ -915,6 +922,8 @@ let stepsSeen     = 0;   // latest iPhone step total reported today
 let stepsCredited = 0;   // today's iPhone steps already turned into coins (whole multiples of STEPS_PER_COIN)
 let stepsLog      = [];  // [{ts, steps, coins, src: 'auto'|'manual'}], newest first
 const STEPS_LOG_MAX = 300;
+const TAKEOUT_LOG_MAX = 300;
+let takeoutLog = [];  // [{ts, amount}], newest first — manual 外卖花费 deductions
 let spendDifficulty = 'low';  // 'low' | 'mid' | 'high' — global setting, persists until changed
 const SPEND_RATE = { low: 1, mid: 2, high: 3 };  // coins deducted per elapsed minute while 消耗ing
 let _savedLeft    = null;
@@ -2319,6 +2328,55 @@ function applyCloudSteps(d) {
   }
   renderSteps();
 }
+
+// Manual deduction point: type in how much a takeout order cost, deduct that many coins
+// 1元=1金币 right away. Mirrors exchangeSteps()/addStepsLog() but in the opposite direction.
+function recordTakeoutSpend() {
+  const input = prompt('外卖花了多少钱？（按 1 元 = 1 金币直接扣除）');
+  if (input === null) return;
+  const amount = Math.round(parseFloat(input));
+  if (!isFinite(amount) || amount <= 0) { alert('请输入一个大于0的数字'); return; }
+  coins -= amount;
+  coinsToday = Math.max(0, coinsToday - amount);
+  coinsTs = Date.now();
+  addTakeoutLog(amount);
+  updateStats();
+  save();
+}
+
+function addTakeoutLog(amount) {
+  takeoutLog.unshift({ ts: Date.now(), amount });
+  takeoutLog = takeoutLog.slice(0, TAKEOUT_LOG_MAX);
+  renderTakeoutLog();
+}
+
+function toggleTakeoutLog() {
+  const el = document.getElementById('takeoutLog');
+  el.style.display = el.style.display === 'none' ? 'flex' : 'none';
+}
+
+function renderTakeoutLog() {
+  document.getElementById('takeoutLogCount').textContent = takeoutLog.length ? `（${takeoutLog.length}）` : '';
+  const pad = n => String(n).padStart(2, '0');
+  document.getElementById('takeoutLog').innerHTML = takeoutLog.length
+    ? takeoutLog.map(e => {
+        const d = new Date(e.ts);
+        return `<div class="steps-log-item"><span>${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}</span>`
+             + `<span>🍔 外卖</span><span class="sl-coins" style="color:var(--danger)">-${e.amount}</span></div>`;
+      }).join('')
+    : '<div class="steps-log-empty">还没有扣费记录</div>';
+}
+
+// History is merged (not replaced) so neither device loses entries — same reasoning as
+// applyCloudSteps() above.
+function applyCloudTakeout(d) {
+  if (Array.isArray(d.takeoutLog)) {
+    const seen = new Set(takeoutLog.map(e => e.ts));
+    const merged = takeoutLog.concat(d.takeoutLog.filter(e => !seen.has(e.ts)));
+    takeoutLog = merged.sort((a, b) => b.ts - a.ts).slice(0, TAKEOUT_LOG_MAX);
+  }
+  renderTakeoutLog();
+}
 function toggleSpendCoins() {
   if (spendingCoins) {
     // Settle the pending minutes first, which needs the cloud's latest alive.json / charges.
@@ -3076,6 +3134,7 @@ function saveLocal() {
     localStorage.setItem('tt_spendWarnIdx', spendWarnIdx);
     localStorage.setItem('tt_spendDifficulty', spendDifficulty);
     localStorage.setItem('tt_steps', JSON.stringify({ stepsDate, stepsSeen, stepsCredited, stepsLog }));
+    localStorage.setItem('tt_takeout', JSON.stringify(takeoutLog));
     localStorage.setItem('tt_skipped',   JSON.stringify(skippedTasks));
     localStorage.setItem('tt_shelved',   JSON.stringify(shelvedTasks));
     localStorage.setItem('tt_inbox',     JSON.stringify(inboxItems));
@@ -3178,6 +3237,8 @@ function load() {
     if (tts) tasksTs = parseInt(tts) || 0;
     const stp = localStorage.getItem('tt_steps');
     if (stp) ({ stepsDate, stepsSeen, stepsCredited, stepsLog } = { stepsDate: '', stepsSeen: 0, stepsCredited: 0, stepsLog: [], ...JSON.parse(stp) });
+    const tko = localStorage.getItem('tt_takeout');
+    if (tko) takeoutLog = JSON.parse(tko) || [];
     const sd = localStorage.getItem('tt_spendDifficulty');
     if (sd && SPEND_RATE[sd]) spendDifficulty = sd;
     if (l)  _savedLeft  = parseInt(l);
@@ -3595,6 +3656,7 @@ function getCloudPayload() {
     spendStateTs, spendStartAt, spendDeducted, spendStartCoins, spendGross, spendEarned, spendAliveAt,
     spendConfirmedAt, spendGrossAtConfirm, spendDepletedAt, spendWarnIdx,
     stepsDate, stepsSeen, stepsCredited, stepsLog,
+    takeoutLog,
     cookFreeUntil, cookTs,
     savedDate: todayStr()
   });
@@ -3714,6 +3776,7 @@ function applyCloudPayload(raw) {
     applyCloudSpend(d, applyCloudCoins(d));
     noteCloudAlive(d);
     applyCloudSteps(d);
+    applyCloudTakeout(d);
     if (d.skippedTasks !== undefined && (d.totalTodayDate || d.savedDate) === todayStr()) skippedTasks = d.skippedTasks;
     if (d.locState   !== undefined) locState     = d.locState;
     else if (d.workMode !== undefined) locState  = d.workMode ? 'work' : 'home_before';
@@ -3927,6 +3990,7 @@ async function pushToCloud() {
           updateStats(); save();
         }
         applyCloudSteps(d);
+        applyCloudTakeout(d);
         // Merges straight into local inboxItems/inboxTs (not just a payload override like
         // the tasksTs-gated fields below) so the push a few lines down carries it forward too.
         mergeCloudInbox(d);
@@ -4043,6 +4107,7 @@ async function pollCloud() {
         // Coins, 消耗, and the inbox don't touch the countdown, so these sync even mid-task.
         applyCloudSpend(d, applyCloudCoins(d));
         applyCloudSteps(d);
+        applyCloudTakeout(d);
         if (inboxChanged) renderInbox();
         updateStats(); save();
         setChip('ok', '☁ 已同步');
@@ -4100,6 +4165,7 @@ if (tasks.length > 0) loadNext();
 else { renderAll(); updateStats(); }
 if (spendingCoins && spendStartAt) { spendTick(); spendInterval = setInterval(spendTick, 1000); }
 renderSteps();
+renderTakeoutLog();
 initCloud();
 </script>
 </body>

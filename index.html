@@ -316,7 +316,7 @@
       cursor: pointer; font-family: inherit; background: transparent; color: var(--muted);
       transition: background .2s, color .2s;
     }
-    .day-btn.on { background: var(--surf3); color: var(--text); border-radius: 4px; }
+    .day-btn.on { background: var(--once); color: #fff; border-radius: 4px; }
 
     /* ── Sync Chip ── */
     .sync-row { display: flex; align-items: center; justify-content: center; gap: 8px; }
@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v179</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v180</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>

@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v177</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v178</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -1650,6 +1650,8 @@ function dailyRollover() {
   lastDay = todayStr();
   totalToday = 0;
   completedToday = 0;
+  coinsToday = 0;
+  coinsTodayBase = 0;
   todayAtResume = 0;  // reset so running tick doesn't restore old value
   if (running) recordStart();  // rebase timerStartedAt so a running task doesn't recompute elapsed from before the reset
   // smallCount is NOT reset here — it's a cumulative trigger counter (every N small-cycle

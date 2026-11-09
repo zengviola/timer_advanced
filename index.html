@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v180</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v181</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -3097,11 +3097,27 @@ function setSpendDifficulty(d) {
   updateStats();
   save();
 }
+// A task's 出现的日子 restriction was previously only ever checked at creation/injection
+// time — editing it on an existing 小循环/大循环 task already sitting in `tasks` was never
+// re-evaluated, so it kept showing up every day regardless of the new restriction. This now
+// also evicts anything no longer active today, mirroring reconcileLocVisibility()/
+// reconcileTimeVisibility() (which already do the same for tags/出现的时间).
 function checkDayHeld() {
+  let changed = false;
+  const stillVisible = [];
+  tasks.forEach(t => { if (taskActiveToday(t)) stillVisible.push(t); else { dayHeldTasks.push(t); changed = true; } });
+  tasks = stillVisible;
+  if (cur && !taskActiveToday(cur)) {
+    clearInterval(ticker); running = false; overSecs = 0; timerStartedAt = null;
+    cur = null; changed = true;
+  }
   const active = dayHeldTasks.filter(t => taskActiveToday(t));
-  if (active.length === 0) return;
-  dayHeldTasks = dayHeldTasks.filter(t => !taskActiveToday(t));
-  active.forEach(t => pushTop(t));
+  if (active.length > 0) {
+    dayHeldTasks = dayHeldTasks.filter(t => !taskActiveToday(t));
+    active.forEach(t => pushTop(t));
+    changed = true;
+  }
+  if (!changed) return;
   if (!cur) loadNext(); else renderQ();
   save();
 }
@@ -3473,9 +3489,10 @@ function saveModal() {
     const dTask = daysTarget(task);
     if (dTask) {
       if (modalDays.length > 0) dTask.days = modalDays.slice(); else delete dTask.days;
-      // Daily instances only self-prune/inject on the periodic check (up to 60s later) —
-      // re-check now so a restriction change takes effect on Save, not up to a minute after
+      // Tasks only self-prune/inject on the periodic check (up to 60s later) — re-check
+      // now so a restriction change takes effect on Save, not up to a minute after
       if (dTask.type === 'daily') checkDailyTasks();
+      else checkDayHeld();
     }
     // Apply tag / time-of-day change — the modal shows these controls no matter which list
     // you opened it from (queue/大循环/日常/已完成), but this used to only write them back
@@ -3496,7 +3513,11 @@ function saveModal() {
         if (task.description) def.description = task.description; else delete def.description;
       }
     }
-    if (editingSrc === 'queue') {
+    // tasks.includes(task) guards against checkDayHeld() above having already relocated
+    // this same task into dayHeldTasks (new day restriction failing too) — without it, a
+    // Save that fails both the day *and* the tag/time check would double-queue it into two
+    // held arrays at once.
+    if (editingSrc === 'queue' && tasks.includes(task)) {
       // If the new tags/time no longer match right now, pull out of queue into the
       // matching held array (whichever check actually failed)
       if (!tagsVisible(task.tags, locState) || !timeSlotVisible(task.timeSlot)) {
@@ -3830,6 +3851,7 @@ function applyCloudPayload(raw) {
     backfillAllSegCountsTotal();
     reconcileLocVisibility();
     reconcileTimeVisibility();
+    checkDayHeld();
     renderContext();
     checkDailyTasks();
     if (tasks.length > 0) loadNext();

@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v178</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v179</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -919,6 +919,7 @@ function isFreeTime(ms = Date.now()) {
 }
 const COIN_PLAY_MIN = 5;  // below this balance (negative included), starting anything is blocked
 const STEPS_PER_COIN = 50;  // step-count exchange (manual or iPhone auto): 50 steps = 1 coin
+const STEPS_MIN_FOR_EXCHANGE = 1000;  // today's steps must reach this before any exchange credits
 let stepsDate     = '';  // day stepsSeen/stepsCredited belong to
 let stepsSeen     = 0;   // latest iPhone step total reported today
 let stepsCredited = 0;   // today's iPhone steps already turned into coins (whole multiples of STEPS_PER_COIN)
@@ -2282,6 +2283,9 @@ function showStepsResult(text) {
 
 // ── iPhone steps (TaskTimer app reads HealthKit and calls this with today's total) ──
 // Only whole STEPS_PER_COIN chunks are credited; the remainder carries over to the next report.
+// Below STEPS_MIN_FOR_EXCHANGE steps for the day, nothing is credited at all yet (not even a
+// partial chunk) — once today's total crosses that line, every eligible chunk since
+// stepsCredited is credited in one go, same as if the threshold had never existed.
 window.__nativeSteps = function (total, fromButton) {
   // Wait for a fresh cloud pull: crediting onto a stale balance would overwrite coins
   // earned on other devices meanwhile (and a fresh install would re-credit today's steps).
@@ -2289,14 +2293,19 @@ window.__nativeSteps = function (total, fromButton) {
   total = Math.max(0, Math.floor(total) || 0);
   rollStepsDay();
   stepsSeen = Math.max(stepsSeen, total);
-  const earned = Math.floor((stepsSeen - stepsCredited) / STEPS_PER_COIN);
+  const earned = stepsSeen >= STEPS_MIN_FOR_EXCHANGE
+    ? Math.floor((stepsSeen - stepsCredited) / STEPS_PER_COIN) : 0;
   if (earned > 0) {
     stepsCredited += earned * STEPS_PER_COIN;
     coins += earned; coinsToday += earned; coinsTs = Date.now();
     addStepsLog(earned * STEPS_PER_COIN, earned, 'auto');
     updateStats();
   }
-  if (fromButton) showStepsResult(earned > 0 ? `+${earned} 🪙` : total > 0 ? '没有新步数' : '读不到步数');
+  if (fromButton) {
+    showStepsResult(earned > 0 ? `+${earned} 🪙`
+      : stepsSeen < STEPS_MIN_FOR_EXCHANGE ? `还差${STEPS_MIN_FOR_EXCHANGE - stepsSeen}步`
+      : total > 0 ? '没有新步数' : '读不到步数');
+  }
   renderSteps();
   save();
 };

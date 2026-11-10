@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v182</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v183</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -2526,6 +2526,11 @@ function convertToSpend() {
     coins = Math.max(0, coins - minutes);
     coinsToday = Math.max(0, coinsToday - minutes);
     coinsTs = Date.now();
+    // This is itself a coin loss during the active 消耗 session — fold it into spendGross
+    // so 本次消耗总结's 扣除 actually accounts for the whole balance drop. Without this, a
+    // convertToSpend() deduction was invisible to the summary: 净 (true before/after coins)
+    // could plunge far below 扣除/赚回 with no visible explanation.
+    if (spendingCoins) spendGross += minutes;
   }
 
   overSecs = 0;

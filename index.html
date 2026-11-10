@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v181</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v182</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -3195,6 +3195,13 @@ function saveLocal() {
   } catch(_) {}
 }
 function save() {
+  // Belt-and-suspenders for dailyRollover(): its own callers (a 60s timer, a visibilitychange
+  // resume) can get throttled or skipped entirely (a backgrounded phone tab, a tab that never
+  // changes visibility) — this makes any save() anywhere self-heal the day first, so a stale
+  // coinsToday/totalToday/completedToday from yesterday can't ride a push out to the cloud
+  // just because nothing happened to call dailyRollover() first. dailyRollover() calls save()
+  // itself once lastDay is current, so this only ever recurses one level deep.
+  if (todayStr() !== lastDay) { dailyRollover(); return; }
   saveLocal();
   syncCookUnlock();  // catches every way a task stops or changes, not just the 开始/暂停 button
   debouncePush();

@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v184</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v185</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -4017,6 +4017,16 @@ async function findGistId() {
   return null;
 }
 
+// Which step failed and why, so a failure can be told apart at a glance: thrown errors carry
+// the HTTP status as their message; anything else is a network failure or a code error.
+function syncFailLabel(step, e) {
+  const m = String(e && e.message || e);
+  if (m === '401') return `⚠ ${step}失败：令牌失效`;
+  if (/^\d{3}$/.test(m)) return `⚠ ${step}失败 ${m}`;
+  if (e && e.name === 'AbortError' || /load failed|network|fetch/i.test(m)) return `⚠ ${step}失败：网络`;
+  return `⚠ ${step}失败：${m.slice(0, 40)}`;
+}
+
 async function loadFromCloud() {
   if (!cloudToken) { cloudReady = true; return; }
   setChip('syncing', '↻ 同步中…');
@@ -4044,7 +4054,7 @@ async function loadFromCloud() {
     setChip('ok', '☁ 已同步');
   } catch(e) {
     console.error('Cloud load error', e);
-    setChip('error', '⚠ 同步失败');
+    setChip('error', syncFailLabel('拉取', e));
   } finally {
     // Whether it succeeded, failed, or fell through to pushToCloud() above, the initial
     // pull attempt is resolved — safe to let subsequent local edits auto-push again.
@@ -4140,7 +4150,7 @@ async function pushToCloud() {
     setChip('ok', '☁ 已同步');
   } catch(e) {
     console.error('Cloud push error', e);
-    setChip('error', '⚠ 同步失败');
+    setChip('error', syncFailLabel('上传', e));
   }
 }
 

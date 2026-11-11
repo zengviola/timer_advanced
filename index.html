@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v183</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v184</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -504,6 +504,7 @@
       <span title="消耗计时器本身扣掉的金币，不算任务赚回来的">消耗 <b id="spendGrossDisp">0</b></span>
       <span title="这期间完成任务赚回的金币">赚取 <b id="spendEarnedDisp">0</b></span>
       <span title="消耗和赚取相抵后，余额实际少了多少">净扣 <b id="spendDeductedDisp">0</b></span>
+      <button class="btn-exchange-steps" id="btnDaySafety" style="display:none" onclick="enableDaySafety()">开启AFK检查</button>
       <button class="btn-stop-spend" onclick="toggleSpendCoins()">停止扣金币</button>
     </div>
   </div>
@@ -2260,6 +2261,7 @@ function updateStats() {
     document.getElementById('spendGrossDisp').textContent    = spendGross;
     document.getElementById('spendEarnedDisp').textContent   = spendEarned;
     document.getElementById('spendDeductedDisp').textContent = Math.max(0, spendStartCoins - coins);
+    document.getElementById('btnDaySafety').style.display = (!daySafetyOn && !isCheckinHour(Date.now())) ? 'inline-block' : 'none';
   } else {
     detail.style.display = 'none';
   }
@@ -2424,7 +2426,7 @@ function toggleSpendCoins() {
     spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
     spendGross = 0; spendEarned = 0; spendStateTs = Date.now();
     spendConfirmedAt = 0; spendGrossAtConfirm = 0; spendAliveAt = 0; hideCheckin();
-    spendDepletedAt = 0; spendWarnIdx = 0;
+    spendDepletedAt = 0; spendWarnIdx = 0; daySafetyOn = false;
     updateStats(); save();
     if (cloudReady) pushToCloud();  // bypass the debounce — an external tool (e.g. a Steam-blocking guard) may be gating on spendingCoins and needs this promptly, not after a 3s delay
     return;
@@ -2459,7 +2461,7 @@ function startSpendCoins() {
   spendGross      = 0;
   spendEarned     = 0;
   spendAlarmFired = false;
-  spendDepletedAt = 0; spendWarnIdx = 0;
+  spendDepletedAt = 0; spendWarnIdx = 0; daySafetyOn = false;
   spendLastHeartbeat = Date.now();
   spendStateTs    = Date.now();
   spendConfirmedAt = 0; spendGrossAtConfirm = 0;
@@ -2547,10 +2549,13 @@ function convertToSpend() {
 // elapsed time (matches tick()'s approach) instead of trusting tick counts.
 // ── Night check-in: from 21:30, every 30 min of 消耗 asks 还在玩吗？ ──
 // Unanswered for 5 min → stop 消耗 and refund everything charged since the last 继续,
-// so falling asleep with 消耗 on doesn't drain the balance overnight.
+// so falling asleep with 消耗 on doesn't drain the balance overnight. Opt-in during the
+// day via daySafetyOn (a button in 消耗's detail row, confirmed once per session) for
+// anyone who wants the same walked-away safety net outside night hours too.
 const CHECKIN_EVERY_MIN = 30;
 const CHECKIN_WAIT_MIN  = 5;
 let checkinBeep = null;
+let daySafetyOn = false;  // this 消耗 session opted into daytime check-ins too
 
 // Minutes after midnight when that day's free time ends: 21:30, or midnight on Fri/Sat.
 function freeEndMinutes(d) {
@@ -2558,10 +2563,28 @@ function freeEndMinutes(d) {
   return (day === 5 || day === 6) ? 24 * 60 : FREE_WINDOW[1];
 }
 
-// Check-ins run from the end of the evening's free time until 06:00 — never during free time.
+// Check-ins run from the end of the evening's free time until 06:00, or any time
+// daySafetyOn is on for this session — never during the free window itself either way.
 function isCheckinHour(ms) {
+  if (isFreeTime(ms)) return false;
   const d = new Date(ms), m = d.getHours() * 60 + d.getMinutes();
-  return m >= freeEndMinutes(d) || m < 6 * 60;
+  return m >= freeEndMinutes(d) || m < 6 * 60 || daySafetyOn;
+}
+
+// Button in 消耗's detail row, shown only while check-ins wouldn't otherwise be running —
+// turns them on for the rest of this session after a one-time confirmation.
+function enableDaySafety() {
+  if (daySafetyOn) return;
+  if (!confirm(`开启后，消耗期间每 ${CHECKIN_EVERY_MIN} 分钟会弹一次"还在玩吗"，${CHECKIN_WAIT_MIN} 分钟内不点"继续"就自动停止消耗并退还这段时间扣的金币。确定开启吗？`)) return;
+  daySafetyOn = true;
+  // Counts the first 30 min from right now, not from whenever the session actually
+  // started — otherwise opting in an hour into a session would find its very first
+  // check-in already "overdue" and auto-stop it on the spot.
+  spendConfirmedAt = Date.now();
+  spendGrossAtConfirm = spendGross;
+  spendStateTs = Date.now();
+  updateStats(); save();
+  if (cloudReady) pushToCloud();
 }
 
 function checkinDue() {
@@ -2621,7 +2644,7 @@ function autoStopSpend() {
   spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
   spendGross = 0; spendEarned = 0; spendStateTs = Date.now();
   spendConfirmedAt = 0; spendGrossAtConfirm = 0; spendAliveAt = 0;
-  spendDepletedAt = 0; spendWarnIdx = 0;
+  spendDepletedAt = 0; spendWarnIdx = 0; daySafetyOn = false;
   hideCheckin();
   document.getElementById('checkinStoppedRefund').textContent = refund;
   document.getElementById('checkinStoppedModal').style.display = 'flex';
@@ -3183,6 +3206,7 @@ function saveLocal() {
     localStorage.setItem('tt_spendAliveAt', spendAliveAt);
     localStorage.setItem('tt_spendDepletedAt', spendDepletedAt);
     localStorage.setItem('tt_spendWarnIdx', spendWarnIdx);
+    localStorage.setItem('tt_daySafetyOn', daySafetyOn ? '1' : '0');
     localStorage.setItem('tt_spendDifficulty', spendDifficulty);
     localStorage.setItem('tt_steps', JSON.stringify({ stepsDate, stepsSeen, stepsCredited, stepsLog }));
     localStorage.setItem('tt_takeout', JSON.stringify(takeoutLog));
@@ -3275,6 +3299,7 @@ function load() {
       else spendDeducted = Math.floor((Date.now() - spendStartAt) / 60000);  // pre-fix save: assume minutes so far were already charged rather than charging them twice
       spendDepletedAt = parseInt(localStorage.getItem('tt_spendDepletedAt')) || 0;
       spendWarnIdx    = parseInt(localStorage.getItem('tt_spendWarnIdx')) || 0;
+      daySafetyOn     = localStorage.getItem('tt_daySafetyOn') === '1';
       spendAlarmFired = spendDepletedAt > 0;  // don't re-sound the initial alarm after a reload if we were already in overdraft
     }
     const sk = pick('tt_skipped',  'tt5_skipped');
@@ -3717,7 +3742,7 @@ function getCloudPayload() {
     left, total, curId: cur ? cur.id : -1,
     spendingCoins, spendTs: Date.now(),
     spendStateTs, spendStartAt, spendDeducted, spendStartCoins, spendGross, spendEarned, spendAliveAt,
-    spendConfirmedAt, spendGrossAtConfirm, spendDepletedAt, spendWarnIdx,
+    spendConfirmedAt, spendGrossAtConfirm, spendDepletedAt, spendWarnIdx, daySafetyOn,
     stepsDate, stepsSeen, stepsCredited, stepsLog,
     takeoutLog,
     cookFreeUntil, cookTs,
@@ -3937,12 +3962,13 @@ function applyCloudSpend(d, tookCoins) {
       spendAlarmFired = false;
       spendDepletedAt = d.spendDepletedAt || 0;
       spendWarnIdx    = d.spendWarnIdx || 0;
+      daySafetyOn     = !!d.daySafetyOn;
       spendInterval   = setInterval(spendTick, 1000);
     } else {
       spendingCoins = false; spendStartAt = null; spendDeducted = 0; spendStartCoins = 0;
       spendGross = 0; spendEarned = 0;
       spendConfirmedAt = 0; spendGrossAtConfirm = 0; spendAliveAt = 0;
-      spendDepletedAt = 0; spendWarnIdx = 0;
+      spendDepletedAt = 0; spendWarnIdx = 0; daySafetyOn = false;
     }
     if (!spendingCoins || Date.now() < checkinDue()) hideCheckin();
   } else if (tookCoins && spendingCoins && d.spendingCoins && d.spendStartAt === spendStartAt) {
@@ -3963,6 +3989,7 @@ function applyCloudSpend(d, tookCoins) {
       ? Math.min(spendDepletedAt, d.spendDepletedAt)
       : (spendDepletedAt || d.spendDepletedAt || 0);
     spendWarnIdx = Math.max(spendWarnIdx, d.spendWarnIdx || 0);
+    daySafetyOn  = daySafetyOn || !!d.daySafetyOn;  // either device opting in is enough
   }
 }
 

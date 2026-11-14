@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v187</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v188</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -908,10 +908,10 @@ const COOK_UNLOCK_KEY = '炒菜准备';
 const COOK_GRACE_MS   = 10 * 60000;
 let cookFreeUntil = 0;
 let cookTs        = 0;   // when this device last changed cookFreeUntil; the newest change wins across devices
-// While the current task has 刷牙 in its name — started or not — the iPhone app unlocks every
+// While the current task has 刷牙 or 洗脸 in its name — started or not — the iPhone app unlocks every
 // app (it reads brushFreeUntil from the gist). Re-extended while the task stays current, so a
 // device that goes to sleep on it relocks on its own within BRUSH_GRACE_MS.
-const BRUSH_UNLOCK_KEY = '刷牙';
+const BRUSH_UNLOCK_KEYS = ['刷牙', '洗脸'];  // 洗脸: the 指甲油/剪指甲/…/洗脸 routine
 const BRUSH_GRACE_MS   = 30 * 60000;
 let brushFreeUntil = 0;
 let brushTs        = 0;   // like cookTs
@@ -1613,7 +1613,7 @@ function startPause() {
 }
 
 function syncBrushUnlock() {
-  const until = cur && cur.name.includes(BRUSH_UNLOCK_KEY) ? Date.now() + (running ? left * 1000 : 0) + BRUSH_GRACE_MS : 0;
+  const until = cur && BRUSH_UNLOCK_KEYS.some(k => cur.name.includes(k)) ? Date.now() + (running ? left * 1000 : 0) + BRUSH_GRACE_MS : 0;
   const expiring = until > 0 && brushFreeUntil - Date.now() < BRUSH_GRACE_MS / 3;
   if ((until > 0) === (brushFreeUntil > 0) && !expiring) return;
   brushFreeUntil = until;

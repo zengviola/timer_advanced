@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v186</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v187</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -908,6 +908,13 @@ const COOK_UNLOCK_KEY = '炒菜准备';
 const COOK_GRACE_MS   = 10 * 60000;
 let cookFreeUntil = 0;
 let cookTs        = 0;   // when this device last changed cookFreeUntil; the newest change wins across devices
+// While the current task has 刷牙 in its name — started or not — the iPhone app unlocks every
+// app (it reads brushFreeUntil from the gist). Re-extended while the task stays current, so a
+// device that goes to sleep on it relocks on its own within BRUSH_GRACE_MS.
+const BRUSH_UNLOCK_KEY = '刷牙';
+const BRUSH_GRACE_MS   = 30 * 60000;
+let brushFreeUntil = 0;
+let brushTs        = 0;   // like cookTs
 // 20:00–21:30 (device local time) is free: 消耗 can start at any balance and charges nothing.
 // On Fri/Sat nights the window runs from 20:00 all the way to midnight instead.
 const FREE_WINDOW = [20 * 60, 21 * 60 + 30];
@@ -1573,7 +1580,7 @@ function loadNext(autoStart = false) {
     ticker = setInterval(tick, 1000);
     btnSP.textContent = '暂停';
   }
-  syncCookUnlock();
+  syncCookUnlock(); syncBrushUnlock();
   checkBrushReminder();
 }
 
@@ -1602,7 +1609,16 @@ function startPause() {
     timerStartedAt = null;
   }
   btnSP.textContent = running ? '暂停' : '继续';
-  syncCookUnlock();
+  syncCookUnlock(); syncBrushUnlock();
+}
+
+function syncBrushUnlock() {
+  const until = cur && cur.name.includes(BRUSH_UNLOCK_KEY) ? Date.now() + (running ? left * 1000 : 0) + BRUSH_GRACE_MS : 0;
+  const expiring = until > 0 && brushFreeUntil - Date.now() < BRUSH_GRACE_MS / 3;
+  if ((until > 0) === (brushFreeUntil > 0) && !expiring) return;
+  brushFreeUntil = until;
+  brushTs = Date.now();
+  if (cloudReady) pushToCloud();  // the phone gates on this; don't wait for the debounce
 }
 
 function syncCookUnlock() {
@@ -3234,7 +3250,7 @@ function save() {
   // itself once lastDay is current, so this only ever recurses one level deep.
   if (todayStr() !== lastDay) { dailyRollover(); return; }
   saveLocal();
-  syncCookUnlock();  // catches every way a task stops or changes, not just the 开始/暂停 button
+  syncCookUnlock(); syncBrushUnlock();  // catches every way a task stops or changes, not just the 开始/暂停 button
   debouncePush();
 }
 function load() {
@@ -3379,6 +3395,7 @@ setInterval(() => {
   if (todayStr() !== lastDay) dailyRollover();
   checkDailyTasks();
   checkDayHeld();
+  syncBrushUnlock();  // keeps extending it while a 刷牙 task stays current
   if (reconcileTimeVisibility()) {
     if (!cur) loadNext(); else renderQ();
     save();
@@ -3747,7 +3764,7 @@ function getCloudPayload() {
     spendConfirmedAt, spendGrossAtConfirm, spendDepletedAt, spendWarnIdx, daySafetyOn,
     stepsDate, stepsSeen, stepsCredited, stepsLog,
     takeoutLog,
-    cookFreeUntil, cookTs,
+    cookFreeUntil, cookTs, brushFreeUntil, brushTs,
     savedDate: todayStr()
   });
 }
@@ -4080,6 +4097,7 @@ async function pushToCloud() {
   // 停止 made on the other device, and neither would ever see it again.
   let cloudQueue = null;  // cloud's queue, when it's newer than ours — must not be overwritten below
   let cloudCook  = null;  // cloud's 炒菜准备 unlock, when another device changed it more recently
+  let cloudBrush = null;  // same for 刷牙
   if (cloudGistId) {
     try {
       const latest = await gistGet(`https://api.github.com/gists/${cloudGistId}`);
@@ -4091,6 +4109,7 @@ async function pushToCloud() {
         noteAppsInUse(files);
         if ((d.tasksTs || 0) > tasksTs) cloudQueue = d;
         if ((d.cookTs || 0) > cookTs) cloudCook = d;
+        if ((d.brushTs || 0) > brushTs) cloudBrush = d;
         // applyCloudCoins() merges deltas and is a no-op when nothing's actually new, so it's
         // safe (and necessary, to keep coinsBase current) to always call it here rather than
         // gate on a cross-device timestamp comparison.
@@ -4113,6 +4132,7 @@ async function pushToCloud() {
   // The next poll pulls them in once nothing is running.
   const payload = JSON.parse(getCloudPayload());
   if (cloudCook) { payload.cookFreeUntil = cloudCook.cookFreeUntil; payload.cookTs = cloudCook.cookTs; }
+  if (cloudBrush) { payload.brushFreeUntil = cloudBrush.brushFreeUntil; payload.brushTs = cloudBrush.brushTs; }
   if (cloudQueue) {
     // Every list field merges per-task id instead of taking the cloud's copy wholesale —
     // otherwise this device's own just-made edit (e.g. a completion count bump, or a task

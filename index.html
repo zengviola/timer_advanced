@@ -422,7 +422,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v185</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v186</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -3173,7 +3173,9 @@ function saveLocal() {
     // by the inbox functions, so an inbox-only change doesn't falsely bump tasksTs (which
     // would make this device's whole task queue look "newer" than it really is to others).
     const queueSnap = JSON.stringify([tasks, bigTasks, dailyDefs, shelvedTasks, heldTasks]);
-    if (queueSnap !== _lastQueueSnap) { tasksTs = Date.now(); _lastQueueSnap = queueSnap; }
+    // A newer tasksTs makes every other device's queue look older to this one, so a queue
+    // change must also go out — even from the periodic local-only snapshot.
+    if (queueSnap !== _lastQueueSnap) { tasksTs = Date.now(); _lastQueueSnap = queueSnap; debouncePush(); }
     localStorage.setItem('tt_tasksTs', tasksTs);
     // Stable keys — will never change prefix again
     localStorage.setItem('tt_tasks',     JSON.stringify(tasks));
@@ -4027,6 +4029,8 @@ function syncFailLabel(step, e) {
   return `⚠ ${step}失败：${m.slice(0, 40)}`;
 }
 
+let cloudTasksTs = 0;  // tasksTs of the queue the initial pull found in the cloud
+
 async function loadFromCloud() {
   if (!cloudToken) { cloudReady = true; return; }
   setChip('syncing', '↻ 同步中…');
@@ -4045,6 +4049,7 @@ async function loadFromCloud() {
     const gist = await res.json();
     const content = gist.files?.['timer_data.json']?.content;
     if (content) {
+      cloudTasksTs = JSON.parse(content).tasksTs || 0;
       applyCloudPayload(content);
       noteAppsInUse(gist.files);
     } else {
@@ -4060,6 +4065,10 @@ async function loadFromCloud() {
     // pull attempt is resolved — safe to let subsequent local edits auto-push again.
     cloudReady = true;
     cloudFresh = true;
+    // This device's queue is newer than the cloud's (changed while offline, or saved locally
+    // before a reload): send it now. Otherwise every later poll skips the cloud's queue as
+    // older while nothing ever pushes this one, and the devices drift apart for good.
+    if (tasksTs > cloudTasksTs) debouncePush();
   }
 }
 

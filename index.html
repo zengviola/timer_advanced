@@ -340,6 +340,10 @@
     }
     .cloud-note { font-size: 0.75rem; color: var(--muted); line-height: 1.55; }
 
+    .export-dir-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .export-dir-row .fl { white-space: nowrap; }
+    .export-dir-row input { width: auto; flex: 1; font-size: 0.82rem; padding: 7px 10px; }
+
     /* ── Stats Bar ── */
     .stats-bar {
       display: flex; gap: 10px;
@@ -422,10 +426,20 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v188</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v190</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
+  </div>
+
+  <!-- Browsers never expose a File System Access handle's real OS path to JS (by design,
+       for privacy) — this is just a note you type in once yourself, kept per-device in
+       localStorage (not synced), so you always have a copy-pasteable reminder of where
+       导出 actually lands on THIS device. -->
+  <div class="export-dir-row" id="exportDirRow">
+    <span class="fl">导出位置（自己填，方便复制）</span>
+    <input type="text" id="exportDirLabel" placeholder="例如 N:\Dropbox\Data\ZW\Daily Task" oninput="saveExportDirLabel()">
+    <button class="edit-btn" onclick="copyExportDirLabel()">复制</button>
   </div>
 
   <div class="debt-warning" id="coinDebtWarning" style="display:none">🚫 金币不足，不可以开始消耗/启动游戏！！！（照常可以做任务赚金币）</div>
@@ -1770,6 +1784,27 @@ function forEachExportableTask(fn) {
 // Chromium-only (Chrome/Edge desktop); unsupported browsers just fall through to the
 // normal <a download> below, so this is purely an upgrade where it's available.
 let exportDirHandle = null;
+
+// A self-typed, copy-pasteable reminder of where 导出 lands on THIS device — the File
+// System Access API never hands JS the real OS path of a granted folder (by design), so
+// this can't be read back automatically; it's just whatever the user types in once.
+// Per-device on purpose (kept in localStorage only, never synced): the real folder a phone
+// picks has nothing to do with what a desktop picks.
+function loadExportDirLabel() {
+  const el = document.getElementById('exportDirLabel');
+  if (el) el.value = localStorage.getItem('tt_exportDirLabel') || '';
+}
+function saveExportDirLabel() {
+  localStorage.setItem('tt_exportDirLabel', document.getElementById('exportDirLabel').value);
+}
+function copyExportDirLabel() {
+  const val = document.getElementById('exportDirLabel').value;
+  if (!val) return;
+  (navigator.clipboard?.writeText(val) ?? Promise.reject()).catch(() => {
+    const el = document.getElementById('exportDirLabel');
+    el.select(); document.execCommand('copy');
+  });
+}
 function idbOpenFS() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open('timerAdvancedFS', 1);
@@ -1838,6 +1873,11 @@ async function downloadCsv(rows, filenameSuffix, uniquePerRun = false) {
   const filename = `任务完成次数_${filenameSuffix}_${stamp}.csv`;
   const { handle: dir, reason } = await ensureExportDir();
   if (dir) {
+    // Seed the label with the folder's own name the first time one's granted — just a
+    // starting point (it's the leaf folder name only, never the full path; see above), so
+    // there's something to edit into the full path instead of an empty box.
+    const label = document.getElementById('exportDirLabel');
+    if (label && !label.value) { label.value = dir.name; saveExportDirLabel(); }
     try {
       const fileHandle = await dir.getFileHandle(filename, { create: true });
       const writable = await fileHandle.createWritable();
@@ -4296,6 +4336,7 @@ else { renderAll(); updateStats(); }
 if (spendingCoins && spendStartAt) { spendTick(); spendInterval = setInterval(spendTick, 1000); }
 renderSteps();
 renderTakeoutLog();
+loadExportDirLabel();
 initCloud();
 </script>
 </body>

@@ -426,7 +426,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v190</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v191</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -1280,7 +1280,7 @@ function addTask() {
 
   if (selType === 'big') {
     const nEl = document.getElementById('iTriN');
-    const bt = { id: uid++, name, duration: mins * 60, type: 'big', count: 0, trigEvery: Math.max(1, parseInt(nEl?.value) || 20) };
+    const bt = { id: uid++, name, duration: mins * 60, type: 'big', count: 0, trigEvery: Math.max(1, parseInt(nEl?.value) || 20), _trigBase: smallCount };
     if (desc) bt.description = desc;
     if (selDays.length > 0) bt.days = selDays.slice();
     bigTasks.push(bt);
@@ -1763,6 +1763,19 @@ function backfillAllSegCountsTotal() {
   skippedTasks.forEach(s => backfillSegCountsTotal(s.task));
 }
 
+// One-time migration for a bigTask saved before _trigBase existed (shared-smallCount era).
+// Backdates the baseline to land on today's already-displayed progress (smallCount % every)
+// instead of defaulting to 0, which would make every pre-existing big task fire at once the
+// moment this ships, if smallCount already happens to be past their trigEvery.
+function backfillTrigBase() {
+  bigTasks.forEach(bt => {
+    if (bt._trigBase === undefined) {
+      const every = isNaN(bt.trigEvery) || bt.trigEvery < 1 ? 20 : bt.trigEvery;
+      bt._trigBase = smallCount - (smallCount % every);
+    }
+  });
+}
+
 // Walks every task once (dedup'd by id) and hands it to fn — shared by both export modes
 // below so they see exactly the same set of tasks. 一次性任务 (type 'once') never repeat, so
 // a completion count for one is meaningless — they're skipped here rather than filtered per
@@ -2010,6 +2023,7 @@ function doComplete() {
     // one — otherwise a queue with no 小循环 tasks left in rotation at all (every task
     // promoted to 大循环) can never advance smallCount, so nothing can ever trigger again.
     smallCount++;
+    t._trigBase = smallCount;  // restart this task's own countdown fresh from right now
     bigTasks.push(t);       // big cycle → back to dormant, waits for next trigger
     checkTriggers();
     renderBig();
@@ -2043,9 +2057,14 @@ function triggerBigNow(id) {
 
 function checkTriggers() {
   const fired = [];
+  // Each task counts its own completions since it last went dormant (_trigBase, stamped
+  // fresh every time it re-enters bigTasks) — not a shared smallCount % every, which used
+  // to make "再完成 N 次触发" show some arbitrary leftover instead of a fresh full interval
+  // right after completing, since every big task was really just reading the same global
+  // clock modulo its own trigEvery.
   bigTasks = bigTasks.filter(bt => {
     const every = isNaN(bt.trigEvery) || bt.trigEvery < 1 ? 20 : bt.trigEvery;
-    if (smallCount % every === 0) { fired.push(bt); return false; }
+    if (smallCount - (bt._trigBase || 0) >= every) { fired.push(bt); return false; }
     return true;
   });
   if (fired.length > 0) {
@@ -3084,7 +3103,7 @@ function renderBig() {
   bigList.innerHTML = bigTasks.map(bt => {
     const mins     = Math.ceil(bt.duration / 60);
     const every    = isNaN(bt.trigEvery) || bt.trigEvery < 1 ? 20 : bt.trigEvery;
-    const progress = smallCount % every;
+    const progress = Math.min(every, Math.max(0, smallCount - (bt._trigBase || 0)));
     const pct      = Math.round((progress / every) * 100);
     const remain   = every - progress;
     const dragging = dragCtx && dragCtx.id === bt.id ? ' dragging' : '';
@@ -3945,6 +3964,7 @@ function applyCloudPayload(raw) {
     dedupeAcrossArrays();
     dedupeDailyAcrossDone();
     backfillAllSegCountsTotal();
+    backfillTrigBase();
     reconcileLocVisibility();
     reconcileTimeVisibility();
     checkDayHeld();
@@ -4323,6 +4343,7 @@ dedupeTaskIds();
 dedupeAcrossArrays();
 dedupeDailyAcrossDone();
 backfillAllSegCountsTotal();
+backfillTrigBase();
 renderSpendDifficultyToggle();
 if (todayStr() !== lastDay) dailyRollover();  // catch up if the app was closed across midnight
 reconcileLocVisibility();

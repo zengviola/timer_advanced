@@ -42,6 +42,14 @@ def page_text(html):
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html))
 
 
+def warning_text(html):
+    """Only the warning itself: the page's menus link to "Brisbane Forecast" etc., so matching the
+    whole page flagged every hail warning in QLD. The tail after "The next warning" lists other
+    districts' warnings and is cut off too."""
+    m = re.search(r'(?is)<div id="main">(.*?)(?:The next warning|</div>)', html)
+    return page_text(m.group(1) if m else "")
+
+
 def push(title, body, url=None, critical=False):
     key = os.environ.get("BARK_KEY", "").strip()
     # Accept the whole "https://api.day.app/<key>/..." URL Bark shows, not just the key.
@@ -79,7 +87,7 @@ def check_warnings(state):
         guid = item.findtext("guid", link)
         if "thunderstorm" not in title.lower():
             continue
-        text = page_text(fetch(link.replace("http://", "https://")))
+        text = warning_text(fetch(link.replace("http://", "https://")))
         if not re.search(r"\bhail", text, re.I):
             continue
         for place, needles in PLACES.items():

@@ -426,7 +426,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v193</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v194</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -518,7 +518,7 @@
       <span title="消耗计时器本身扣掉的金币，不算任务赚回来的">消耗 <b id="spendGrossDisp">0</b></span>
       <span title="这期间完成任务赚回的金币">赚取 <b id="spendEarnedDisp">0</b></span>
       <span title="消耗和赚取相抵后，余额实际少了多少">净扣 <b id="spendDeductedDisp">0</b></span>
-      <button class="btn-exchange-steps" id="btnDaySafety" style="display:none" onclick="enableDaySafety()">开启AFK检查</button>
+      <button class="btn-exchange-steps" id="btnDaySafety" style="display:none" onclick="toggleDaySafety()">开启AFK检查</button>
       <button class="btn-stop-spend" onclick="toggleSpendCoins()">停止扣金币</button>
     </div>
   </div>
@@ -2336,7 +2336,10 @@ function updateStats() {
     document.getElementById('spendGrossDisp').textContent    = spendGross;
     document.getElementById('spendEarnedDisp').textContent   = spendEarned;
     document.getElementById('spendDeductedDisp').textContent = Math.max(0, spendStartCoins - coins);
-    document.getElementById('btnDaySafety').style.display = (!daySafetyOn && !isCheckinHour(Date.now())) ? 'inline-block' : 'none';
+    // Daytime only: the night check-ins always run. On by default, so the button is usually 关闭.
+    const daySafetyBtn = document.getElementById('btnDaySafety');
+    daySafetyBtn.textContent = daySafetyOn ? '关闭AFK检查' : '开启AFK检查';
+    daySafetyBtn.style.display = isNightCheckinHour(Date.now()) || isFreeTime() ? 'none' : 'inline-block';
   } else {
     detail.style.display = 'none';
   }
@@ -2536,7 +2539,8 @@ function startSpendCoins() {
   spendGross      = 0;
   spendEarned     = 0;
   spendAlarmFired = false;
-  spendDepletedAt = 0; spendWarnIdx = 0; daySafetyOn = false;
+  spendDepletedAt = 0; spendWarnIdx = 0;
+  daySafetyOn     = true;  // AFK check-ins all day by default; turning them off is a deliberate choice
   spendLastHeartbeat = Date.now();
   spendStateTs    = Date.now();
   spendConfirmedAt = 0; spendGrossAtConfirm = 0;
@@ -2640,16 +2644,26 @@ function freeEndMinutes(d) {
 
 // Check-ins run from the end of the evening's free time until 06:00, or any time
 // daySafetyOn is on for this session — never during the free window itself either way.
-function isCheckinHour(ms) {
+function isNightCheckinHour(ms) {
   if (isFreeTime(ms)) return false;
   const d = new Date(ms), m = d.getHours() * 60 + d.getMinutes();
-  return m >= freeEndMinutes(d) || m < 6 * 60 || daySafetyOn;
+  return m >= freeEndMinutes(d) || m < 6 * 60;
+}
+function isCheckinHour(ms) {
+  return isNightCheckinHour(ms) || (daySafetyOn && !isFreeTime(ms));
 }
 
-// Button in 消耗's detail row, shown only while check-ins wouldn't otherwise be running —
-// turns them on for the rest of this session after a one-time confirmation.
-function enableDaySafety() {
-  if (daySafetyOn) return;
+// Button in 消耗's detail row, shown in the daytime: daytime AFK check-ins are on for every
+// new session, and switching them off for this session takes a confirmation.
+function toggleDaySafety() {
+  if (daySafetyOn) {
+    if (!confirm('关闭后，这次消耗白天不再每 30 分钟问"还在玩吗"，走开了也会一直扣金币（晚上的检查照常）。确定关闭吗？')) return;
+    daySafetyOn = false;
+    spendStateTs = Date.now();  // so other devices adopt the choice instead of OR-ing it back on
+    updateStats(); save();
+    if (cloudReady) pushToCloud();
+    return;
+  }
   if (!confirm(`开启后，消耗期间每 ${CHECKIN_EVERY_MIN} 分钟会弹一次"还在玩吗"，${CHECKIN_WAIT_MIN} 分钟内不点"继续"就自动停止消耗并退还这段时间扣的金币。确定开启吗？`)) return;
   daySafetyOn = true;
   // Counts the first 30 min from right now, not from whenever the session actually
@@ -4077,7 +4091,9 @@ function applyCloudSpend(d, tookCoins) {
       ? Math.min(spendDepletedAt, d.spendDepletedAt)
       : (spendDepletedAt || d.spendDepletedAt || 0);
     spendWarnIdx = Math.max(spendWarnIdx, d.spendWarnIdx || 0);
-    daySafetyOn  = daySafetyOn || !!d.daySafetyOn;  // either device opting in is enough
+    // Either device turning it on is enough, but only for the same state: a newer local
+    // choice to switch it off must not be OR-ed back on by an older cloud copy.
+    if ((d.spendStateTs || 0) === spendStateTs) daySafetyOn = daySafetyOn || !!d.daySafetyOn;
   }
 }
 

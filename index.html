@@ -426,7 +426,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v191</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v193</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -2662,13 +2662,22 @@ function enableDaySafety() {
   if (cloudReady) pushToCloud();
 }
 
+// The moment that day's free time ends (21:30, or midnight on Fri/Sat).
+function freeEndAt(ms) {
+  const d = new Date(ms), end = freeEndMinutes(d);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime() + end * 60000;
+}
+
+// Always a real check-in moment. It used to return base + 30 min even when that landed outside
+// check-in hours, and checkSpendCheckin() then skipped it — for good, since the base never moves:
+// a session started at 05:51 was "due" at 06:21 forever and ran unchecked for 26 hours.
 function checkinDue() {
   let base = spendConfirmedAt || spendStartAt;
-  if (!isCheckinHour(base)) {  // started before free time ended: the first 30 min count from its end
-    const d = new Date(base), end = freeEndMinutes(d);
-    d.setHours(0, 0, 0, 0); base = d.getTime() + end * 60000;
-  }
-  return base + CHECKIN_EVERY_MIN * 60000;
+  if (!isCheckinHour(base)) base = freeEndAt(base);  // started before free time ended: the first 30 min count from its end
+  let due = base + CHECKIN_EVERY_MIN * 60000;
+  if (isFreeTime(due)) due = freeEndAt(due) + CHECKIN_EVERY_MIN * 60000;  // free time costs nothing: ask after it
+  return due;
 }
 
 // The modals sit after this script, so during page init these elements may not exist yet.
@@ -2685,7 +2694,7 @@ function checkSpendCheckin() {
   const now = Date.now(), due = checkinDue();
   // Keyed off when the check-in was due, not the current time: a device waking at 10:00
   // must still honour a check-in that went unanswered at 21:47 the night before.
-  if (now < due || !isCheckinHour(due)) { hideCheckin(); return false; }
+  if (now < due) { hideCheckin(); return false; }
   const deadline = due + CHECKIN_WAIT_MIN * 60000;
   if (now >= deadline) { autoStopSpend(); return true; }
   if (modal.style.display !== 'flex') {

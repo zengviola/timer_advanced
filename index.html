@@ -426,7 +426,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v196</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v197</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -969,6 +969,12 @@ let inboxTs       = 0;
 // that hasn't learned about the removal yet doesn't resurrect it. Trimmed to a reasonable
 // age in mergeCloudInbox() so this doesn't grow forever.
 let removedInboxIds = {};
+// Tombstones for tasks: id -> when this or another device deleted it (dropped from every list).
+// Queues merge as a union of ids, so without these a device still holding an old copy (one
+// opened after weeks away, say) brought deleted tasks back. A copy edited after the deletion
+// (_mtime newer) still wins, so restoring a task with the same id works.
+let deletedTaskIds = {};
+let _lastLiveIds   = null;
 let tasksTs       = 0;   // ms timestamp of last local change to tasks/bigTasks/dailyDefs/shelvedTasks/heldTasks; guards against a stale cloud pull clobbering a fresher local queue
 let queueStampReady = !localStorage.getItem('tt_cloud_token');  // see saveLocal(): true once the first cloud pull settles
 let _lastQueueSnap = null; // internal: snapshot used by save() to detect whether queue state actually changed
@@ -3278,6 +3284,7 @@ function saveLocal() {
     // queue into a new day (daily spawns) during init, and stamping that "now" made its stale
     // copy outrank the cloud — it pushed October's queue back up and resurrected deleted tasks.
     // Left unstamped, the pull adopts the cloud's queue and the next save sees the change then.
+    noteDeletedTasks();
     if (queueSnap !== _lastQueueSnap && queueStampReady) { tasksTs = Date.now(); _lastQueueSnap = queueSnap; debouncePush(); }
     localStorage.setItem('tt_tasksTs', tasksTs);
     // Stable keys — will never change prefix again
@@ -3320,6 +3327,7 @@ function saveLocal() {
     localStorage.setItem('tt_inbox',     JSON.stringify(inboxItems));
     localStorage.setItem('tt_inboxTs',   inboxTs);
     localStorage.setItem('tt_removedInboxIds', JSON.stringify(removedInboxIds));
+    localStorage.setItem('tt_deletedTaskIds', JSON.stringify(deletedTaskIds));
     localStorage.setItem('tt_heldTasks',  JSON.stringify(heldTasks));
     localStorage.setItem('tt_locState',   locState);
     localStorage.setItem('tt_smallCount', smallCount);
@@ -3417,6 +3425,8 @@ function load() {
     if (ibts) inboxTs = parseInt(ibts) || 0;
     const rib = localStorage.getItem('tt_removedInboxIds');
     if (rib) removedInboxIds = JSON.parse(rib);
+    const dti = localStorage.getItem('tt_deletedTaskIds');
+    if (dti) deletedTaskIds = JSON.parse(dti);
     const dh = localStorage.getItem('tt_dayHeld');
     if (dh) dayHeldTasks = JSON.parse(dh);
     const th = localStorage.getItem('tt_timeHeld');
@@ -3453,6 +3463,7 @@ function load() {
   } catch(_) {}
   migrateAllTags();
   _lastQueueSnap = JSON.stringify([tasks, bigTasks, dailyDefs, shelvedTasks, heldTasks]);
+  noteDeletedTasks();  // baseline: what this device holds now
 }
 
 // Migrate tasks saved before tags became multi-select (singular `tag` string -> `tags` array)
@@ -3843,7 +3854,7 @@ function getCloudPayload() {
     totalToday, totalTodayDate: todayStr(),
     completedToday, completedTodayDate: todayStr(),
     coins, coinsToday, coinsTodayDate: todayStr(), coinsTs,
-    skippedTasks, shelvedTasks, inboxItems, inboxTs, removedInboxIds, tasksTs,
+    skippedTasks, shelvedTasks, inboxItems, inboxTs, removedInboxIds, deletedTaskIds, tasksTs,
     heldTasks, timeHeldTasks, locState, smallCount, spendDifficulty,
     left, total, curId: cur ? cur.id : -1,
     spendingCoins, spendTs: Date.now(),
@@ -3890,6 +3901,27 @@ function noteAppsInUse(files) {
 // a task fully removed on one side (completed, moved to `done`, etc.) can reappear if
 // the other side's snapshot still has it and wins the tie-break. That's recoverable by
 // hand (skip/delete it again); silent deletion of live tasks was not.
+function liveTaskLists() {
+  return [tasks, bigTasks, dailyDefs, shelvedTasks, heldTasks, timeHeldTasks, dayHeldTasks, skippedTasks.map(s => s && s.task).filter(Boolean)];
+}
+function mergeDeletedTaskIds(remote) {
+  for (const [id, ts] of Object.entries(remote || {})) if (!(deletedTaskIds[id] >= ts)) deletedTaskIds[id] = ts;
+}
+function dropDeleted(list) {
+  return list.filter(t => !(deletedTaskIds[t.id] > (t._mtime || 0)));
+}
+// Called from saveLocal(): ids that vanished from every list since the last save are deleted;
+// ids that came back (restored) clear their tombstone and get a fresh _mtime to outrank it.
+function noteDeletedTasks() {
+  const now = Date.now(), live = new Map();
+  for (const list of liveTaskLists()) for (const t of list) if (t && t.id != null) live.set(String(t.id), t);
+  if (cur && cur.id != null) live.set(String(cur.id), cur);
+  if (_lastLiveIds) for (const id of _lastLiveIds) if (!live.has(id)) deletedTaskIds[id] = now;
+  for (const [id, t] of live) if (deletedTaskIds[id] > (t._mtime || 0)) { t._mtime = now; delete deletedTaskIds[id]; }
+  for (const id in deletedTaskIds) if (now - deletedTaskIds[id] > 60 * 86400000) delete deletedTaskIds[id];
+  _lastLiveIds = new Set(live.keys());
+}
+
 function mergeTaskQueue(localList, remoteList, remoteNewer) {
   const baseList  = remoteNewer ? remoteList : localList;
   const otherList = remoteNewer ? localList  : remoteList;
@@ -3925,6 +3957,7 @@ function applyCloudPayload(raw) {
     // sync on a fresh device) — otherwise a stale tab/device pushing an old snapshot would
     // silently clobber a fresher local queue (e.g. resurrect tasks that were already
     // restored from 已搁置, or re-shelve tasks that are live in the current queue).
+    mergeDeletedTaskIds(d.deletedTaskIds);
     const localQueueEmpty = tasks.length === 0 && bigTasks.length === 0 && dailyDefs.length === 0 && shelvedTasks.length === 0;
     const remoteNewer = (d.tasksTs || 0) > tasksTs;
     // Every one of these arrays is merged by task id via mergeTaskQueue(), not wholesale-
@@ -3951,6 +3984,8 @@ function applyCloudPayload(raw) {
     }
     if (d.timeHeldTasks !== undefined) timeHeldTasks = mergeTaskQueue(timeHeldTasks, d.timeHeldTasks, remoteNewer || localQueueEmpty);
     if (d.done          !== undefined) done          = mergeTaskQueue(done,          d.done,          remoteNewer || localQueueEmpty);
+    tasks = dropDeleted(tasks); bigTasks = dropDeleted(bigTasks); dailyDefs = dropDeleted(dailyDefs);
+    shelvedTasks = dropDeleted(shelvedTasks); heldTasks = dropDeleted(heldTasks); timeHeldTasks = dropDeleted(timeHeldTasks);
     tasksTs = Math.max(d.tasksTs || 0, tasksTs);
     mergeCloudInbox(d);
     // Math.max, not overwrite: a stale pull setting uid backward would let this device
@@ -4217,6 +4252,7 @@ async function pushToCloud(allowCreate = false) {
         const d = JSON.parse(raw);
         noteCloudAlive(d);
         noteAppsInUse(files);
+        mergeDeletedTaskIds(d.deletedTaskIds);
         if ((d.tasksTs || 0) > tasksTs) cloudQueue = d;
         if ((d.cookTs || 0) > cookTs) cloudCook = d;
         if ((d.brushTs || 0) > brushTs) cloudBrush = d;
@@ -4254,6 +4290,9 @@ async function pushToCloud(allowCreate = false) {
     }
     if (cloudQueue.tasksTs !== undefined) payload.tasksTs = cloudQueue.tasksTs;
   }
+  payload.deletedTaskIds = deletedTaskIds;
+  for (const key of ['tasks', 'bigTasks', 'dailyDefs', 'shelvedTasks', 'heldTasks', 'timeHeldTasks'])
+    if (Array.isArray(payload[key])) payload[key] = dropDeleted(payload[key]);
   const body = JSON.stringify({
     description: 'Timer Advanced — task data',
     public: false,

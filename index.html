@@ -426,7 +426,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v195</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v196</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -970,6 +970,7 @@ let inboxTs       = 0;
 // age in mergeCloudInbox() so this doesn't grow forever.
 let removedInboxIds = {};
 let tasksTs       = 0;   // ms timestamp of last local change to tasks/bigTasks/dailyDefs/shelvedTasks/heldTasks; guards against a stale cloud pull clobbering a fresher local queue
+let queueStampReady = !localStorage.getItem('tt_cloud_token');  // see saveLocal(): true once the first cloud pull settles
 let _lastQueueSnap = null; // internal: snapshot used by save() to detect whether queue state actually changed
 let smallCount    = 0;   // cumulative small-cycle completions (drives big-cycle triggers)
 let locState      = 'work'; // 'home_before' | 'work' | 'home_after' — current location
@@ -3273,7 +3274,11 @@ function saveLocal() {
     const queueSnap = JSON.stringify([tasks, bigTasks, dailyDefs, shelvedTasks, heldTasks]);
     // A newer tasksTs makes every other device's queue look older to this one, so a queue
     // change must also go out — even from the periodic local-only snapshot.
-    if (queueSnap !== _lastQueueSnap) { tasksTs = Date.now(); _lastQueueSnap = queueSnap; debouncePush(); }
+    // Not before the first pull settles, though: a device opened after weeks away rolls its old
+    // queue into a new day (daily spawns) during init, and stamping that "now" made its stale
+    // copy outrank the cloud — it pushed October's queue back up and resurrected deleted tasks.
+    // Left unstamped, the pull adopts the cloud's queue and the next save sees the change then.
+    if (queueSnap !== _lastQueueSnap && queueStampReady) { tasksTs = Date.now(); _lastQueueSnap = queueSnap; debouncePush(); }
     localStorage.setItem('tt_tasksTs', tasksTs);
     // Stable keys — will never change prefix again
     localStorage.setItem('tt_tasks',     JSON.stringify(tasks));
@@ -4185,6 +4190,7 @@ async function loadFromCloud() {
     // pull attempt is resolved — safe to let subsequent local edits auto-push again.
     cloudReady = true;
     cloudFresh = true;
+    queueStampReady = true;
     // This device's queue is newer than the cloud's (changed while offline, or saved locally
     // before a reload): send it now. Otherwise every later poll skips the cloud's queue as
     // older while nothing ever pushes this one, and the devices drift apart for good.

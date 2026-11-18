@@ -426,7 +426,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v198</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v199</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -3650,6 +3650,10 @@ function saveModal() {
     const dTask = daysTarget(task);
     if (dTask) {
       if (modalDays.length > 0) dTask.days = modalDays.slice(); else delete dTask.days;
+      // dailyDefs entries never otherwise get an _mtime — mergeTaskQueue() then has nothing
+      // to tell it this edit is newer than whatever's on the other device, so a 出现的日子
+      // change on a daily task could get silently dropped on the next cross-device merge.
+      if (dTask !== task) dTask._mtime = Date.now();
       // Tasks only self-prune/inject on the periodic check (up to 60s later) — re-check
       // now so a restriction change takes effect on Save, not up to a minute after
       if (dTask.type === 'daily') checkDailyTasks();
@@ -3672,6 +3676,7 @@ function saveModal() {
         if (task.tags) def.tags = task.tags.slice(); else delete def.tags;
         if (task.timeSlot) def.timeSlot = task.timeSlot; else delete def.timeSlot;
         if (task.description) def.description = task.description; else delete def.description;
+        def._mtime = Date.now();  // same reason as the 出现的日子 fix above
       }
     }
     // tasks.includes(task) guards against checkDayHeld() above having already relocated

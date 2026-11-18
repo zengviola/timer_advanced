@@ -426,7 +426,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v197</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v198</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -1810,9 +1810,16 @@ let exportDirHandle = null;
 // this can't be read back automatically; it's just whatever the user types in once.
 // Per-device on purpose (kept in localStorage only, never synced): the real folder a phone
 // picks has nothing to do with what a desktop picks.
+// Known per-machine defaults, used only while this device's box is still empty (anything
+// typed in wins). The Mac mini's Dropbox lives at ~/Dropbox → CloudStorage/Dropbox.
+// iPads also report "Macintosh" but have touch, so they're excluded.
+const MAC_MINI_EXPORT_DIR = '/Users/conki/Dropbox/Data/ZW/Daily Task';
+function isDesktopMac() { return /Macintosh/.test(navigator.userAgent) && !(navigator.maxTouchPoints > 1); }
 function loadExportDirLabel() {
   const el = document.getElementById('exportDirLabel');
-  if (el) el.value = localStorage.getItem('tt_exportDirLabel') || '';
+  if (!el) return;
+  el.value = localStorage.getItem('tt_exportDirLabel') || (isDesktopMac() ? MAC_MINI_EXPORT_DIR : '');
+  if (isDesktopMac()) el.placeholder = '例如 ' + MAC_MINI_EXPORT_DIR;
 }
 function saveExportDirLabel() {
   localStorage.setItem('tt_exportDirLabel', document.getElementById('exportDirLabel').value);

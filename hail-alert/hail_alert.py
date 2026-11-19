@@ -1,8 +1,13 @@
-"""Hail alerts for Kangaroo Point (Brisbane) and Bundall (Gold Coast) via Bark.
+"""Hail alerts for Kangaroo Point (Brisbane) and Bundall (Gold Coast), plus rain alerts for
+Kangaroo Point, via Bark.
 
 Data: Bureau of Meteorology public feeds.
   - QLD warnings RSS: severe thunderstorm warnings that mention hail
   - QLD precis forecast: a once-a-day heads-up when storms are forecast
+Rain: Open-Meteo (free, no key) 15-minute precipitation forecast — BoM's own JSON API forbids
+third-party use, so it isn't used here.
+  - rain expected within the next hour while it's still dry -> push (once per rain spell)
+  - once a day after 5am: heads-up if today's rain chance is high
 
 Env: BARK_KEY (no key -> dry run, prints instead of pushing). State in state.json.
 """
@@ -28,6 +33,18 @@ PLACES = {
 # Nearest BoM forecast locations.
 FORECAST_LOCATIONS = {"袋鼠角": "Brisbane", "Bundall": "Surfers Paradise"}
 
+# Rain: Kangaroo Point only.
+RAIN_PLACE, RAIN_LAT, RAIN_LON = "袋鼠角", -27.476, 153.036
+RAIN_URL = (
+    "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
+    "&minutely_15=precipitation&past_minutely_15=2&forecast_minutely_15=4"
+    "&hourly=precipitation_probability,precipitation&forecast_days=1"
+    "&daily=precipitation_probability_max,precipitation_sum&timezone=Australia%2FBrisbane"
+).format(lat=RAIN_LAT, lon=RAIN_LON)
+RAIN_MM = 0.2          # per 15 min; below this it's a few drops at most
+RAIN_QUIET_HOURS = 3   # one alert per rain spell, not one every 10 minutes
+RAIN_DAY_PROB = 50     # % for the morning heads-up
+
 UA = {"User-Agent": "Mozilla/5.0 (hail-alert personal script)"}
 
 
@@ -50,7 +67,7 @@ def warning_text(html):
     return page_text(m.group(1) if m else "")
 
 
-def push(title, body, url=None, critical=False):
+def push(title, body, url=None, critical=False, group="冰雹提醒"):
     key = os.environ.get("BARK_KEY", "").strip()
     # Accept the whole "https://api.day.app/<key>/..." URL Bark shows, not just the key.
     m = re.search(r"day\.app/([^/\s]+)", key)
@@ -59,7 +76,7 @@ def push(title, body, url=None, critical=False):
     if not key:
         print(f"[dry run] {title} | {body} | {url or ''}")
         return
-    payload = {"device_key": key, "title": title, "body": body, "group": "冰雹提醒"}
+    payload = {"device_key": key, "title": title, "body": body, "group": group}
     if url:
         payload["url"] = url
     if critical:
@@ -121,6 +138,44 @@ def check_forecast(state):
     state["forecast_date"] = today
 
 
+def check_rain(state):
+    now = datetime.now(BRISBANE_TZ)
+    data = json.loads(fetch(RAIN_URL))
+    m15 = data["minutely_15"]
+    slots = [(datetime.fromisoformat(t).replace(tzinfo=BRISBANE_TZ), mm or 0.0)
+             for t, mm in zip(m15["time"], m15["precipitation"])]
+    past = [mm for t, mm in slots if t + timedelta(minutes=15) <= now]
+    coming = [(t, mm) for t, mm in slots if t + timedelta(minutes=15) > now]
+    wet = [(t, mm) for t, mm in coming if mm >= RAIN_MM]
+
+    last = state.get("rain_alerted_at")
+    quiet = last and now - datetime.fromisoformat(last) < timedelta(hours=RAIN_QUIET_HOURS)
+    already_raining = any(mm >= RAIN_MM for mm in past[-1:])
+    if wet and not quiet and not already_raining:
+        start = wet[0][0]
+        mins = max(0, round((start - now).total_seconds() / 60))
+        total = sum(mm for _, mm in coming)
+        when = "马上" if mins <= 5 else f"约 {mins} 分钟后（{start:%H:%M}）"
+        push(f"🌧️ {RAIN_PLACE} {when}下雨",
+             f"未来一小时预计降雨约 {total:.1f} mm。收衣服、带伞。", group="下雨提醒")
+        state["rain_alerted_at"] = now.isoformat()
+    elif already_raining and not quiet:
+        state["rain_alerted_at"] = now.isoformat()  # started without warning: don't alert mid-spell
+
+    today = now.strftime("%Y-%m-%d")
+    if now.hour >= 5 and state.get("rain_day_date") != today:
+        prob = (data["daily"]["precipitation_probability_max"] or [0])[0] or 0
+        mm = (data["daily"]["precipitation_sum"] or [0])[0] or 0
+        if prob >= RAIN_DAY_PROB:
+            h = data["hourly"]
+            hours = [t[11:13] for t, p in zip(h["time"], h["precipitation_probability"])
+                     if (p or 0) >= RAIN_DAY_PROB and t[11:13] >= f"{now.hour:02d}"]
+            span = f"，主要在 {hours[0]}–{int(hours[-1]) + 1:02d} 点" if hours else ""
+            push(f"☔ {RAIN_PLACE}今天可能下雨", f"降雨概率 {prob}%，预计 {mm:.1f} mm{span}。",
+                 group="下雨提醒")
+        state["rain_day_date"] = today
+
+
 def main():
     try:
         with open(STATE_FILE, encoding="utf-8") as f:
@@ -128,7 +183,7 @@ def main():
     except (OSError, ValueError):
         state = {}
     failed = False
-    for check in (check_warnings, check_forecast):
+    for check in (check_warnings, check_forecast, check_rain):
         try:
             check(state)
         except Exception as e:  # one feed down shouldn't block the other

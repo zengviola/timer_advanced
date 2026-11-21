@@ -15,6 +15,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -48,10 +49,19 @@ RAIN_DAY_PROB = 50     # % for the morning heads-up
 UA = {"User-Agent": "Mozilla/5.0 (hail-alert personal script)"}
 
 
-def fetch(url):
+def fetch(url, retries=2):
+    # A bare SSL handshake timeout against a free public API (seen against Open-Meteo) is a
+    # one-off network blip, not a real failure — retry a couple of times with a short pause
+    # before letting it actually fail the run.
     req = urllib.request.Request(url, headers=UA)
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return r.read().decode("utf-8", errors="replace")
+    for attempt in range(retries + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return r.read().decode("utf-8", errors="replace")
+        except (TimeoutError, urllib.error.URLError):
+            if attempt == retries:
+                raise
+            time.sleep(5)
 
 
 def page_text(html):

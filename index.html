@@ -426,7 +426,7 @@
 <div class="app">
 
   <div class="sync-row">
-    <div class="app-title">⏱ 任务计时器<span class="app-version">v199</span></div>
+    <div class="app-title">⏱ 任务计时器<span class="app-version">v202</span></div>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportSegCountsCsv()" title="导出所有任务从一开始的累计完成次数">📊 总导出</button>
     <button class="sync-chip sc-idle" style="margin-right:6px" onclick="exportDeltaCountsCsv()" title="只导出上次点这个按钮到现在新增的完成次数，导出后重新计起">📊 区间导出</button>
     <button class="sync-chip sc-idle" id="syncChip" onclick="toggleCloudCfg()">☁ 未配置</button>
@@ -1981,9 +1981,11 @@ async function exportDeltaCountsCsv() {
       parts.forEach(seg => rows.push([t.name, seg, (counts[seg] || 0) - (base[seg] || 0)]));
     });
     await downloadCsv(rows, '区间', true);
+    const _now = Date.now();
     forEachExportableTask(t => {
       t._expBaseCount = t.count || 0;
       t._expBaseSeg = Object.assign({}, t.segCountsTotal || {});
+      t._mtime = _now;  // so the new baseline wins the next cloud merge instead of being reverted
     });
     save();
   } finally { exportInProgress = false; }
@@ -2033,6 +2035,10 @@ function doComplete() {
     if (t.dayCountDate !== _tdb) { t.dayCount = 0; t.dayCountDate = _tdb; t.segCounts = {}; }
     t.dayCount = (t.dayCount || 0) + 1;
     recordSegCompletion(t);
+    // Same as 小循环 above: without this stamp a cloud merge treats the stale remote copy as
+    // just-as-new and lets it win, silently dropping this completion from count /
+    // segCountsTotal (seen as 区间导出 reporting 0 for a segment the badge showed as done).
+    t._mtime = Date.now();
     // A 大循环 completion counts toward the "每 N 次触发" counter too, same as a 小循环
     // one — otherwise a queue with no 小循环 tasks left in rotation at all (every task
     // promoted to 大循环) can never advance smallCount, so nothing can ever trigger again.
@@ -3934,6 +3940,32 @@ function noteDeletedTasks() {
   _lastLiveIds = new Set(live.keys());
 }
 
+// Completion counts only ever grow, so whichever copy wins a merge must not lose a count the
+// losing copy recorded — otherwise a stale copy (e.g. after a failed 409 push) wipes a
+// completion and 区间导出 later reports 0 for it. Max per key, never summed (shared history
+// would double-count). Same for the export baseline, which also only moves forward.
+function foldCounts(win, lose) {
+  const out = { ...win };
+  const maxMap = (a, b) => {
+    if (!a && !b) return undefined;
+    const m = { ...(a || {}) };
+    for (const k in (b || {})) m[k] = Math.max(m[k] || 0, b[k] || 0);
+    return m;
+  };
+  out.count = Math.max(win.count || 0, lose.count || 0);
+  const tot = maxMap(win.segCountsTotal, lose.segCountsTotal);
+  if (tot) out.segCountsTotal = tot;
+  if (win._expBaseSeg || lose._expBaseSeg) out._expBaseSeg = maxMap(win._expBaseSeg, lose._expBaseSeg);
+  if (win._expBaseCount !== undefined || lose._expBaseCount !== undefined)
+    out._expBaseCount = Math.max(win._expBaseCount || 0, lose._expBaseCount || 0);
+  if (win.dayCountDate && win.dayCountDate === lose.dayCountDate) {
+    out.dayCount = Math.max(win.dayCount || 0, lose.dayCount || 0);
+    const seg = maxMap(win.segCounts, lose.segCounts);
+    if (seg) out.segCounts = seg;
+  }
+  return out;
+}
+
 function mergeTaskQueue(localList, remoteList, remoteNewer) {
   const baseList  = remoteNewer ? remoteList : localList;
   const otherList = remoteNewer ? localList  : remoteList;
@@ -3954,7 +3986,8 @@ function mergeTaskQueue(localList, remoteList, remoteNewer) {
   const merged = [];
   baseMap.forEach((baseTask, id) => {
     const other = otherMap.get(id);
-    merged.push(other && (other._mtime || 0) > (baseTask._mtime || 0) ? other : baseTask);
+    const win = other && (other._mtime || 0) > (baseTask._mtime || 0) ? other : baseTask;
+    merged.push(other ? foldCounts(win, win === other ? baseTask : other) : win);
   });
   const seen = new Set(merged.map(t => t.id));
   otherMap.forEach((t, id) => { if (!seen.has(id)) merged.push(t); });
